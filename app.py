@@ -13,7 +13,6 @@ v2 新增：
 """
 
 import os
-import sys
 import io
 import re
 import csv
@@ -768,49 +767,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        try:
-            path = urllib.parse.urlparse(self.path).path
-            if path in ("/", "/index.html"):
-                return self._static("index.html", "text/html; charset=utf-8")
-            if path == "/app.js":
-                return self._static("app.js", "text/javascript; charset=utf-8")
-            if path == "/styles.css":
-                return self._static("styles.css", "text/css; charset=utf-8")
-            if path.startswith("/api/"):
-                return self._api_get(path)
-            return self._send(404, "Not found")
-        except Exception as e:
-            return self._crash(e)
+        path = urllib.parse.urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            return self._static("index.html", "text/html; charset=utf-8")
+        if path == "/app.js":
+            return self._static("app.js", "text/javascript; charset=utf-8")
+        if path == "/styles.css":
+            return self._static("styles.css", "text/css; charset=utf-8")
+        if path.startswith("/api/"):
+            return self._api_get(path)
+        return self._send(404, "Not found")
 
     def do_POST(self):
-        try:
-            path = urllib.parse.urlparse(self.path).path
-            return self._api_write(path, self._body(), "POST")
-        except Exception as e:
-            return self._crash(e)
+        path = urllib.parse.urlparse(self.path).path
+        return self._api_write(path, self._body(), "POST")
 
     def do_PUT(self):
-        try:
-            path = urllib.parse.urlparse(self.path).path
-            return self._api_write(path, self._body(), "PUT")
-        except Exception as e:
-            return self._crash(e)
+        path = urllib.parse.urlparse(self.path).path
+        return self._api_write(path, self._body(), "PUT")
 
     def do_DELETE(self):
-        try:
-            path = urllib.parse.urlparse(self.path).path
-            return self._api_write(path, self._body(), "DELETE")
-        except Exception as e:
-            return self._crash(e)
-
-    def _crash(self, e):
-        import traceback
-        tb = traceback.format_exc()
-        sys.stderr.write(tb)
-        try:
-            self._json({"error": "server_error", "detail": str(e), "trace": tb.splitlines()[-6:]}, 500)
-        except Exception:
-            pass
+        path = urllib.parse.urlparse(self.path).path
+        return self._api_write(path, self._body(), "DELETE")
 
     def _static(self, name, ctype):
         fp = os.path.join(WEB_DIR, name)
@@ -876,8 +854,6 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- API write ----
     def _api_write(self, path, body, method):
-        sys.stderr.write("[DBG] %s %s body=%r\n" % (method, path, body))
-        sys.stderr.flush()
         # 登录/登出无需鉴权
         if path == "/api/login" and method == "POST":
             return self._login(body)
