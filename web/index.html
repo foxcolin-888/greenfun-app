@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>绿趣 · 家装阳台植物花园全流程管理</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🌿</span>
+      <div>
+        <div class="brand-name">绿趣 · 全流程管理</div>
+        <div class="brand-sub">家装阳台植物花园 · 内部执行系统</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-btn active" data-view="customers">客户档案</button>
+      <button class="nav-btn" data-view="kanban">进度看板</button>
+      <button class="nav-btn" data-view="forms">表单模板库</button>
+      <button class="nav-btn" data-view="stats">数据统计</button>
+    </nav>
+    <div class="operator">
+      <span>当前操作员</span>
+      <input id="operator" placeholder="填你的名字" maxlength="12">
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <!-- 详情抽屉 -->
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-mask" id="drawerMask"></div>
+    <aside class="drawer-panel" id="drawerPanel"></aside>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

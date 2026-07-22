@@ -1,0 +1,20 @@
+# Render 部署配置（Blueprint）
+# 部署步骤：把整个 greenfun-app 目录推到 GitHub，在 render.com 新建 Blueprint 关联仓库即可。
+# 首次部署后，务必在 Render 控制台为该服务挂载一个 Disk（挂载路径 /data），
+# 否则每次重启数据库会清空（DB_PATH 已指向 /data/greenfun.db）。
+services:
+  - type: web
+    name: greenfun
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DB_PATH
+        value: /data/greenfun.db
+    disk:
+      name: greenfun-data
+      mountPath: /data
+      sizeGB: 1
