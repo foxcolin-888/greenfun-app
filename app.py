@@ -13,6 +13,7 @@ v2 新增：
 """
 
 import os
+import sys
 import io
 import re
 import csv
@@ -767,28 +768,49 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path in ("/", "/index.html"):
-            return self._static("index.html", "text/html; charset=utf-8")
-        if path == "/app.js":
-            return self._static("app.js", "text/javascript; charset=utf-8")
-        if path == "/styles.css":
-            return self._static("styles.css", "text/css; charset=utf-8")
-        if path.startswith("/api/"):
-            return self._api_get(path)
-        return self._send(404, "Not found")
+        try:
+            path = urllib.parse.urlparse(self.path).path
+            if path in ("/", "/index.html"):
+                return self._static("index.html", "text/html; charset=utf-8")
+            if path == "/app.js":
+                return self._static("app.js", "text/javascript; charset=utf-8")
+            if path == "/styles.css":
+                return self._static("styles.css", "text/css; charset=utf-8")
+            if path.startswith("/api/"):
+                return self._api_get(path)
+            return self._send(404, "Not found")
+        except Exception as e:
+            return self._crash(e)
 
     def do_POST(self):
-        path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "POST")
+        try:
+            path = urllib.parse.urlparse(self.path).path
+            return self._api_write(path, self._body(), "POST")
+        except Exception as e:
+            return self._crash(e)
 
     def do_PUT(self):
-        path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "PUT")
+        try:
+            path = urllib.parse.urlparse(self.path).path
+            return self._api_write(path, self._body(), "PUT")
+        except Exception as e:
+            return self._crash(e)
 
     def do_DELETE(self):
-        path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "DELETE")
+        try:
+            path = urllib.parse.urlparse(self.path).path
+            return self._api_write(path, self._body(), "DELETE")
+        except Exception as e:
+            return self._crash(e)
+
+    def _crash(self, e):
+        import traceback
+        tb = traceback.format_exc()
+        sys.stderr.write(tb)
+        try:
+            self._json({"error": "server_error", "detail": str(e), "trace": tb.splitlines()[-6:]}, 500)
+        except Exception:
+            pass
 
     def _static(self, name, ctype):
         fp = os.path.join(WEB_DIR, name)
