@@ -135,4 +135,66 @@ button{font-family:inherit;cursor:pointer}
 .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--green-900);color:#fff;padding:11px 22px;border-radius:10px;font-size:14px;z-index:80;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:fade .2s}
 @keyframes fade{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 .empty{text-align:center;color:var(--muted);padding:50px;background:#fff;border-radius:11px;border:1px dashed var(--border)}
+/* 登录遮罩 */
+.login-gate{position:fixed;inset:0;z-index:100;background:linear-gradient(135deg,var(--green-900),var(--green-600));display:flex;align-items:center;justify-content:center}
+.login-card{background:#fff;border-radius:16px;padding:34px 32px;width:min(400px,92vw);box-shadow:0 18px 50px rgba(0,0,0,.28)}
+.login-brand{font-size:21px;font-weight:800;color:var(--green-900);display:flex;align-items:center;gap:8px}
+.login-brand .logo{font-size:28px}
+.login-sub{font-size:12px;color:var(--muted);margin:4px 0 22px}
+.login-field{margin-bottom:14px}
+.login-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+.login-field input{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:9px;font-size:14px;outline:none}
+.login-field input:focus{border-color:var(--green-500)}
+.login-err{color:var(--red);font-size:12px;min-height:16px;margin-bottom:6px}
+.login-btn{width:100%;padding:12px;font-size:15px;letter-spacing:4px}
+.login-tip{font-size:11px;color:var(--muted);margin-top:16px;line-height:1.7;background:var(--green-50);padding:9px 11px;border-radius:8px}
+
+/* 用户信息 */
+.userbox{margin-left:auto;display:flex;align-items:center;gap:12px}
+.ub-info{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}
+.ub-name{font-size:14px;font-weight:700;color:#fff}
+.ub-role{font-size:11px;color:#d6f0e0;background:rgba(255,255,255,.15);padding:1px 8px;border-radius:20px}
+
+/* 通用小表 / 提示 */
+.mini-table{width:100%;border-collapse:collapse;font-size:12px}
+.mini-table th,.mini-table td{border:1px solid var(--border);padding:6px 8px;text-align:left}
+.mini-table th{background:var(--green-50);color:var(--green-900)}
+.hint{font-size:12px;color:var(--muted);background:var(--green-50);padding:9px 12px;border-radius:8px;margin-bottom:10px;line-height:1.7}
+.hint code{background:#fff;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--green-700)}
+.wfull{width:100%}
+.q-warn{background:#fff3e0;border:1px solid #ffcc80;color:#b45309;font-size:12px;padding:9px 12px;border-radius:8px;margin-top:10px;line-height:1.7}
+
+/* 报价台 */
+.quote-wrap{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}
+.q-paste{width:100%;min-height:120px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;font-family:"Consolas",monospace;outline:none;resize:vertical}
+.q-paste:focus{border-color:var(--green-500)}
+.q-paste-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.file-btn{position:relative}
+.q-quickadd{flex:1;min-width:220px}
+.q-items-table{width:100%;border-collapse:collapse;font-size:12px}
+.q-items-table th,.q-items-table td{border:1px solid var(--border);padding:4px 5px;text-align:left}
+.q-items-table th{background:var(--green-50);color:var(--green-900);font-weight:700}
+.q-items-table tr.unmatched{background:#fff8e1}
+.q-items-table .cell{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px;font-size:12px;border-radius:5px;outline:none;font-family:inherit}
+.q-items-table .cell:focus{border-color:var(--green-400,#66bb6a);background:#fff}
+.q-items-table .cell.sm{max-width:90px}
+.q-items-table .cell.xs{max-width:64px}
+.q-items-table .q-sub{white-space:nowrap;font-weight:700;color:var(--green-900)}
+.q-del{background:#ffebee;color:#c62828;border:none;width:22px;height:22px;border-radius:6px;font-size:14px;line-height:1}
+.q-params .pfield{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.q-params .pfield label{flex:none;width:120px;font-size:12px;color:var(--muted);font-weight:600}
+.q-params .pfield input{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;outline:none}
+.q-params .pfield input:focus{border-color:var(--green-500)}
+.q-params .pfield .unit{font-size:11px;color:var(--muted);flex:none}
+.q-summary .sum-row{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--border);color:#33433b}
+.q-summary .sum-total{display:flex;justify-content:space-between;font-size:18px;font-weight:800;color:var(--green-700);margin-top:10px;padding-top:10px;border-top:2px solid var(--green-300)}
+.q-right .section{position:sticky;top:70px}
+
+/* 价格库 / 账号表 */
+.price-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.price-table th,.price-table td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
+.price-table th{background:var(--green-50);color:var(--green-900);font-weight:700}
+.price-table tr:hover{background:var(--green-50)}
+
+@media(max-width:960px){.quote-wrap{grid-template-columns:1fr}.q-right .section{position:static}}
 @media(max-width:760px){.grid{grid-template-columns:1fr}.forms-layout{grid-template-columns:1fr}.stat-cards{grid-template-columns:repeat(2,1fr)}.nav-btn{padding:8px 10px;font-size:12px}}
