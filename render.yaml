@@ -1,7 +1,16 @@
 # Render 部署配置（Blueprint）
-# 部署步骤：把整个 greenfun-app 目录推到 GitHub，在 render.com 新建 Blueprint 关联仓库即可。
-# 首次部署后，务必在 Render 控制台为该服务挂载一个 Disk（挂载路径 /data），
-# 否则每次重启数据库会清空（DB_PATH 已指向 /data/greenfun.db）。
+# 部署步骤：仓库已推到 GitHub，在 render.com 新建 Blueprint 关联本仓库即可自动生效。
+#
+# 免费版（plan: free）说明：
+#   - 不用持久盘，数据库写入 ./greenfun.db（临时文件系统，实例重启/休眠后会被重置）。
+#   - 免费实例 15 分钟无访问会休眠，下次访问自动唤醒（首访略慢）。
+#   - 适合先跑起来试用、内部小团队低频使用。
+#
+# 如需数据持久化（生产推荐）：
+#   1) 在 Render 控制台把本服务升级到 Starter 计划（$7/月）；
+#   2) 为该服务添加一个 Disk（挂载路径 /data，大小 1GB）；
+#   3) 新增环境变量 DB_PATH=/data/greenfun.db（app.py 已支持，无需改代码）。
+#   这样数据库就持久保存，重启也不会丢。
 services:
   - type: web
     name: greenfun
@@ -9,12 +18,5 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
-    envVars:
-      - key: PORT
-        value: "10000"
-      - key: DB_PATH
-        value: /data/greenfun.db
-    disk:
-      name: greenfun-data
-      mountPath: /data
-      sizeGB: 1
+    # 注意：PORT 由 Render 平台自动注入，app.py 已读取，这里不要再写死。
+    healthCheckPath: /api/health
