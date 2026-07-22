@@ -876,6 +876,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- API write ----
     def _api_write(self, path, body, method):
+        sys.stderr.write("[DBG] %s %s body=%r\n" % (method, path, body))
+        sys.stderr.flush()
         # 登录/登出无需鉴权
         if path == "/api/login" and method == "POST":
             return self._login(body)
