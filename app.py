@@ -905,19 +905,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        return self._serve_get(path)
+
+    def do_HEAD(self):
+        path = urllib.parse.urlparse(self.path).path
+        return self._serve_get(path, head_only=True)
+
+    def _serve_get(self, path, head_only=False):
         # 内部管理后台 /admin/* -> web/admin/
         if path == "/admin" or path == "/admin/":
-            return self._static("admin/index.html", "text/html; charset=utf-8")
+            return self._static("admin/index.html", "text/html; charset=utf-8", head_only=head_only)
         if path.startswith("/admin/"):
-            return self._static(path[1:], None)  # 自动推断 content-type
+            return self._static(path[1:], None, head_only=head_only)  # 自动推断 content-type
         # 对外品牌官网根路径 -> web/index.html
         if path in ("/", "/index.html"):
-            return self._static("index.html", "text/html; charset=utf-8")
+            return self._static("index.html", "text/html; charset=utf-8", head_only=head_only)
         if path == "/app.js":
-            return self._static("app.js", "text/javascript; charset=utf-8")
+            return self._static("app.js", "text/javascript; charset=utf-8", head_only=head_only)
         if path == "/styles.css":
-            return self._static("styles.css", "text/css; charset=utf-8")
+            return self._static("styles.css", "text/css; charset=utf-8", head_only=head_only)
         if path.startswith("/api/"):
+            if head_only:
+                return self._send(200, b"", "application/json")
             return self._api_get(path)
         return self._html_error(404, "您访问的页面不存在")
 
@@ -933,12 +942,19 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         return self._api_write(path, self._body(), "DELETE")
 
-    def _static(self, name, ctype=None):
+    def _static(self, name, ctype=None, head_only=False):
         fp = os.path.join(WEB_DIR, name)
         if not os.path.exists(fp) or os.path.isdir(fp):
             return self._html_error(404, "资源未找到：%s" % name)
         if ctype is None:
             ctype = self._guess_ctype(fp)
+        if head_only:
+            size = os.path.getsize(fp)
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            return
         with open(fp, "rb") as f:
             self._send(200, f.read(), ctype)
 
