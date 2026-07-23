@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>绿趣 · 家装阳台植物花园全流程管理</title>
   <link rel="stylesheet" href="styles.css">
+  <noscript><style>.noscript-warn{position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;padding:10px 14px;text-align:center;font-family:system-ui,sans-serif;font-size:14px}</style></noscript>
 </head>
 <body>
+  <noscript><div class="noscript-warn">本系统需要启用 JavaScript 才能使用，请在浏览器设置中开启后刷新。</div></noscript>
   <!-- 登录遮罩 -->
   <div id="loginGate" class="login-gate">
     <div class="login-card">
@@ -17,6 +19,7 @@
       <div id="loginErr" class="login-err"></div>
       <button class="btn login-btn" id="loginBtn">登 录</button>
       <div class="login-tip">默认账号：lvquguanliyuan / 123456（管理员）· dianzhang / green123（店长）· xiaoshou / green123（销售）· sheji / green123（设计师）</div>
+      <div class="login-tip" id="bootHint" style="opacity:.7">首次加载可能稍慢（服务偶发休眠），若长时间空白请按 Ctrl / Cmd + Shift + R 刷新</div>
     </div>
   </div>
 

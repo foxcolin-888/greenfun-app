@@ -1,3 +1,8 @@
+// 全局错误兜底：脚本异常时给出提示而非静默空白
+window.addEventListener('error', function () {
+  var t = document.getElementById('toast');
+  if (t) { t.textContent = '页面脚本异常，请刷新重试'; t.classList.remove('hidden'); }
+});
 // 绿趣 · 家装阳台植物花园全流程管理 —— 前端逻辑（原生 JS，无第三方依赖）
 const API = '/api';
 const ROLE_NAMES = { admin: '管理员', manager: '店长', sales: '销售顾问', designer: '设计师' };

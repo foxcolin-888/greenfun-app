@@ -752,6 +752,24 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False), "application/json; charset=utf-8")
 
+    def _html_error(self, code, msg):
+        # 友好 HTML 错误页：避免浏览器直接显示苍白的 "Not found" 纯文本
+        html = (
+            "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1.0'>"
+            "<title>🌿 绿趣 · 提示</title></head>"
+            "<body style='margin:0;font-family:system-ui,-apple-system,sans-serif;"
+            "background:linear-gradient(135deg,#1b5e3a,#357a50);color:#fff;"
+            "min-height:100vh;display:flex;align-items:center;justify-content:center;"
+            "text-align:center'>"
+            "<div><div style='font-size:52px'>🌿</div>"
+            "<h1 style='font-weight:600;margin:12px 0 6px'>服务暂不可用</h1>"
+            f"<p style='opacity:.85;margin:0'>{msg}</p>"
+            "<p style='opacity:.6;font-size:14px;margin-top:14px'>请稍后刷新重试（Ctrl/Cmd + Shift + R）</p>"
+            "</div></body></html>"
+        )
+        self._send(code, html, "text/html; charset=utf-8")
+
     def _body(self):
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
@@ -806,7 +824,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("styles.css", "text/css; charset=utf-8")
         if path.startswith("/api/"):
             return self._api_get(path)
-        return self._send(404, "Not found")
+        return self._html_error(404, "您访问的页面不存在")
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
@@ -823,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
     def _static(self, name, ctype):
         fp = os.path.join(WEB_DIR, name)
         if not os.path.exists(fp):
-            return self._send(404, "missing")
+            return self._html_error(404, "资源未找到：%s" % name)
         with open(fp, "rb") as f:
             self._send(200, f.read(), ctype)
 
