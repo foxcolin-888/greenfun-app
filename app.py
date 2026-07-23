@@ -433,7 +433,37 @@ def init_db():
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", (k, v))
     conn.commit()
+
+    # 账号迁移：将旧管理员 admin 平滑迁移为新管理员账号（无论全新库还是已有库都生效）
+    _migrate_admin(conn)
+
     conn.close()
+
+
+def _migrate_admin(conn):
+    """将默认管理员账号平滑迁移为 DEFAULT_USERS[0] 指定的账号/密码。
+    处理三种情况：① 旧 admin 存在 → 重命名+重置密码；② 新账号已存在(非admin) → 仅确保其为admin且密码正确；
+    ③ 都不存在 → 不处理（由种子负责）。避免在已有库上重复创建导致查无此账号。"""
+    if not DEFAULT_USERS:
+        return
+    new_user, new_pw, new_name, new_role = DEFAULT_USERS[0]
+    t = now_str()
+    old = conn.execute("SELECT * FROM users WHERE username=?", ("admin",)).fetchone()
+    exist_new = conn.execute("SELECT * FROM users WHERE username=?", (new_user,)).fetchone()
+    if old and old["username"] != new_user:
+        # 若新账号名已被别人占用，先释放（理论上不会发生）
+        if exist_new:
+            conn.execute("DELETE FROM users WHERE username=?", (new_user,))
+        conn.execute(
+            "UPDATE users SET username=?, pw=?, name=?, role=?, active=1 WHERE id=?",
+            (new_user, hash_pw(new_pw), new_name, new_role, old["id"]))
+        conn.commit()
+    elif exist_new:
+        # 新账号已存在：确保角色为 admin 且密码正确（修复历史库中可能不一致的密码）
+        if exist_new["role"] != new_role or not verify_pw(new_pw, exist_new["pw"]):
+            conn.execute("UPDATE users SET role=?, pw=?, active=1 WHERE id=?",
+                         (new_role, hash_pw(new_pw), exist_new["id"]))
+            conn.commit()
 
 
 def now_str():
