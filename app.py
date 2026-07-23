@@ -250,6 +250,19 @@ DEFAULT_SETTINGS = {
     "transport_rate": "0.08",      # 运输安装费 = 费率 × (硬景+植物+辅材+水电)
     "mgmt_rate": "0.06",           # 项目管理费 = 费率 × 小计(设计+硬景+植物+辅材+水电+运输)
     "tax_rate": "0.03",            # 税金 = 费率 × (小计+管理费)
+    # 利润率档位（后台可编辑，逗号分隔的百分比）
+    "margin_tiers": "20,25,30,40,50",
+    "default_margin": "30",        # 默认毛利率(%)
+    # 付款方式（JSON 数组：[{label, note}]，后台可编辑）
+    "payment_methods": '[{"label":"全款","note":"签约即付全款"},{"label":"3-4-3","note":"定金30% ｜ 中期款40%(施工开始) ｜ 尾款30%(验收合格)"},{"label":"5-5","note":"首付50% ｜ 尾款50%(验收合格)"}]',
+    # 打印样式（后台可编辑）
+    "print_company": "温州绿趣植物空间艺术科技有限公司",
+    "print_slogan": "让植物成为空间的加分项",
+    "print_footer": "鹿城区六虹桥路991号 ｜ 0577-88868293",
+    "print_color": "#2e7d4f",
+    "print_title": "绿趣植物软装报价单",
+    "print_show_cost": "0",        # 是否在报价单上显示成本价/毛利率(0/1)
+    "print_note": "本报价含植物、硬景、辅材及基础施工费用；不含土建与大型水电改造。报价有效期 15 天，以定金到账之日起算。",
 }
 
 # ---------------------------------------------------------------------------
@@ -396,7 +409,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS price_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         category TEXT, name TEXT, spec TEXT, unit TEXT,
-        unit_price REAL, notes TEXT, active INTEGER DEFAULT 1,
+        unit_price REAL, cost_price REAL, notes TEXT, active INTEGER DEFAULT 1,
         updated_at TEXT
     )""")
     c.execute("""
@@ -412,6 +425,7 @@ def init_db():
         transport_rate REAL, transport_fee REAL,
         subtotal REAL, mgmt_rate REAL, mgmt_fee REAL,
         tax_rate REAL, tax REAL, discount REAL, total REAL,
+        margin REAL, payment_method TEXT,
         status TEXT DEFAULT '草稿', remark TEXT,
         created_by TEXT, approved_by TEXT, created_at TEXT, updated_at TEXT
     )""")
@@ -427,11 +441,16 @@ def init_db():
     if conn.execute("SELECT COUNT(*) FROM price_items").fetchone()[0] == 0:
         t = now_str()
         for cat, name, spec, unit, price in DEFAULT_PRICE_ITEMS:
-            conn.execute("INSERT INTO price_items (category, name, spec, unit, unit_price, active, updated_at) VALUES (?,?,?,?,?,1,?)",
-                         (cat, name, spec, unit, float(price), t))
-    # 种子：公式参数
+            # 旧数据仅有行情单价；将其同时作为初始成本价（用户可在后台改为真实成本）
+            conn.execute("INSERT INTO price_items (category, name, spec, unit, unit_price, cost_price, active, updated_at) VALUES (?,?,?,?,?,?,1,?)",
+                         (cat, name, spec, unit, float(price), float(price), t))
+    # 种子：公式参数与系统设置（含新增键；已存在的键不会覆盖）
     for k, v in DEFAULT_SETTINGS.items():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", (k, v))
+    conn.commit()
+
+    # 表结构迁移：兼容早期数据库，补加新列
+    _migrate_schema(conn)
     conn.commit()
 
     # 账号迁移：将旧管理员 admin 平滑迁移为新管理员账号（无论全新库还是已有库都生效）
@@ -466,6 +485,20 @@ def _migrate_admin(conn):
             conn.commit()
 
 
+def _migrate_schema(conn):
+    """在已有数据库上补加新版本引入的列，避免旧库缺列报错。"""
+    def add_col(table, col, ctype, default=None):
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if col not in cols:
+            sql = f"ALTER TABLE {table} ADD COLUMN {col} {ctype}"
+            conn.execute(sql)
+            if default is not None:
+                conn.execute(f"UPDATE {table} SET {col}=?", (default,))
+    add_col("price_items", "cost_price", "REAL", 0)
+    add_col("quotes", "margin", "REAL", 0)
+    add_col("quotes", "payment_method", "TEXT", "")
+
+
 def now_str():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -493,22 +526,41 @@ def to_float(v, default=0.0):
 # 报价计算引擎
 # ---------------------------------------------------------------------------
 def calc_quote(items, params):
-    """items: [{category, name, spec, unit, qty, unit_price}], params: dict"""
+    """成本价 × 利润率倍率 模型。
+    items: [{category, name, spec, unit, qty, cost_price, unit_price?}]
+        - cost_price 为物料成本（优先）；缺省时回退 unit_price 作为成本
+        - 售价 = 成本 / (1 - 利润率)；倍率 = 1/(1-利润率)
+    params: {area, design_fee, margin(毛利率%, 默认取系统设置), transport_rate(小数),
+             mgmt_rate(小数), tax_rate(小数), discount}
+    """
+    s = get_settings()
+    # 利润率
+    margin_pct = to_float(params.get("margin"), to_float(s.get("default_margin"), 30))
+    fr = margin_pct / 100.0 if margin_pct > 1 else margin_pct
+    fr = min(max(fr, 0.0), 0.95)          # 防止 ÷0
+    mult = 1.0 / (1.0 - fr) if fr < 1 else 1.0
+
     groups = {"plant_fee": 0.0, "hardscape_fee": 0.0, "soil_fee": 0.0, "mep_fee": 0.0}
     norm_items = []
+    total_cost = 0.0
     for it in items:
         qty = to_float(it.get("qty"), 0)
-        up = to_float(it.get("unit_price"), 0)
+        # 成本来源：cost_price 优先，回退 unit_price
+        cost = to_float(it.get("cost_price"), None)
+        if cost is None or cost == 0:
+            cost = to_float(it.get("unit_price"), 0)
+        up = round(cost * mult, 2)         # 售价（自动满足利润率）
         sub = round(qty * up, 2)
+        total_cost += round(qty * cost, 2)
         cat = it.get("category", "植物-其他")
         groups[cat_group(cat)] += sub
         norm_items.append({
             "category": cat, "name": it.get("name", ""), "spec": it.get("spec", ""),
-            "unit": it.get("unit", ""), "qty": qty, "unit_price": up, "subtotal": sub,
+            "unit": it.get("unit", ""), "qty": qty,
+            "cost_price": round(cost, 2), "unit_price": up, "subtotal": sub,
             "matched": it.get("matched", True),
         })
 
-    s = get_settings()
     # 设计费：优先取传入值，否则按面积公式
     if params.get("design_fee") not in (None, ""):
         design_fee = to_float(params.get("design_fee"), 0)
@@ -539,6 +591,8 @@ def calc_quote(items, params):
     return {
         "items": norm_items,
         "area": to_float(params.get("area"), 0),
+        "margin_pct": round(fr * 100, 1), "margin": fr, "multiplier": round(mult, 4),
+        "material_cost": round(total_cost, 2),
         "design_fee": design_fee,
         "plant_fee": plant_fee, "hardscape_fee": hardscape_fee,
         "soil_fee": soil_fee, "mep_fee": mep_fee,
@@ -615,16 +669,21 @@ def parse_quote_list(text, price_items):
 
         p = match_price_item(name, price_items)
         if p:
+            cost = p.get("cost_price")
+            if cost is None or cost == 0:
+                cost = p.get("unit_price", 0)
             matched.append({
                 "price_id": p["id"], "category": p["category"], "name": p["name"],
                 "spec": spec or p["spec"], "unit": p["unit"],
-                "qty": qty, "unit_price": given_price if given_price is not None else p["unit_price"],
+                "qty": qty, "cost_price": cost,
+                "unit_price": given_price if given_price is not None else cost,
                 "matched": True, "input": line,
             })
         elif given_price is not None:
             matched.append({
                 "price_id": None, "category": "植物-其他", "name": name,
-                "spec": spec, "unit": "项", "qty": qty, "unit_price": given_price,
+                "spec": spec, "unit": "项", "qty": qty, "cost_price": given_price,
+                "unit_price": given_price,
                 "matched": False, "input": line,
             })
         else:
@@ -1160,9 +1219,11 @@ class Handler(BaseHTTPRequestHandler):
         t = now_str()
         conn = get_db()
         cur = conn.execute(
-            "INSERT INTO price_items (category, name, spec, unit, unit_price, notes, active, updated_at) VALUES (?,?,?,?,?,?,1,?)",
+            "INSERT INTO price_items (category, name, spec, unit, unit_price, cost_price, notes, active, updated_at) VALUES (?,?,?,?,?,?,?,1,?)",
             (body.get("category", "植物-其他"), body.get("name", ""), body.get("spec", ""),
-             body.get("unit", "项"), to_float(body.get("unit_price"), 0), body.get("notes", ""), t))
+             body.get("unit", "项"), to_float(body.get("unit_price"), 0),
+             to_float(body.get("cost_price"), to_float(body.get("unit_price"), 0)),
+             body.get("notes", ""), t))
         conn.commit()
         pid = cur.lastrowid
         conn.close()
@@ -1172,9 +1233,11 @@ class Handler(BaseHTTPRequestHandler):
         t = now_str()
         conn = get_db()
         conn.execute(
-            "UPDATE price_items SET category=?, name=?, spec=?, unit=?, unit_price=?, notes=?, updated_at=? WHERE id=?",
+            "UPDATE price_items SET category=?, name=?, spec=?, unit=?, unit_price=?, cost_price=?, notes=?, updated_at=? WHERE id=?",
             (body.get("category"), body.get("name"), body.get("spec"), body.get("unit"),
-             to_float(body.get("unit_price"), 0), body.get("notes", ""), t, pid))
+             to_float(body.get("unit_price"), 0),
+             to_float(body.get("cost_price"), to_float(body.get("unit_price"), 0)),
+             body.get("notes", ""), t, pid))
         conn.commit()
         conn.close()
         return {"ok": True}
@@ -1311,13 +1374,15 @@ class Handler(BaseHTTPRequestHandler):
             """INSERT INTO quotes (customer_id, quote_no, title, items, area,
                design_fee, hardscape_fee, plant_fee, soil_fee, mep_fee,
                transport_rate, transport_fee, subtotal, mgmt_rate, mgmt_fee,
-               tax_rate, tax, discount, total, status, remark, created_by, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               tax_rate, tax, discount, total, margin, payment_method,
+               status, remark, created_by, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.get("customer_id"), quote_no, body.get("title", "阳台花园项目报价"),
              json.dumps(calc["items"], ensure_ascii=False), calc["area"],
              calc["design_fee"], calc["hardscape_fee"], calc["plant_fee"], calc["soil_fee"], calc["mep_fee"],
              calc["transport_rate"], calc["transport_fee"], calc["subtotal"], calc["mgmt_rate"], calc["mgmt_fee"],
              calc["tax_rate"], calc["tax"], calc["discount"], calc["total"],
+             calc["margin"], body.get("payment_method", ""),
              body.get("status", "草稿"), body.get("remark", ""), u["name"], t, t))
         qid = cur.lastrowid
         # 回写阶段5报价总额，供统计
@@ -1356,11 +1421,13 @@ class Handler(BaseHTTPRequestHandler):
         conn.execute(
             """UPDATE quotes SET title=?, items=?, area=?, design_fee=?, hardscape_fee=?, plant_fee=?,
                soil_fee=?, mep_fee=?, transport_rate=?, transport_fee=?, subtotal=?, mgmt_rate=?, mgmt_fee=?,
-               tax_rate=?, tax=?, discount=?, total=?, remark=?, updated_at=? WHERE id=?""",
+               tax_rate=?, tax=?, discount=?, total=?, margin=?, payment_method=?, remark=?, updated_at=? WHERE id=?""",
             (body.get("title", r["title"]), json.dumps(calc["items"], ensure_ascii=False), calc["area"],
              calc["design_fee"], calc["hardscape_fee"], calc["plant_fee"], calc["soil_fee"], calc["mep_fee"],
              calc["transport_rate"], calc["transport_fee"], calc["subtotal"], calc["mgmt_rate"], calc["mgmt_fee"],
-             calc["tax_rate"], calc["tax"], calc["discount"], calc["total"], body.get("remark", r["remark"]), t, qid))
+             calc["tax_rate"], calc["tax"], calc["discount"], calc["total"],
+             calc["margin"], body.get("payment_method", r.get("payment_method", "")),
+             body.get("remark", r["remark"]), t, qid))
         if r["customer_id"]:
             self._sync_quote_to_stage(conn, r["customer_id"], calc, u)
         conn.commit()
@@ -1518,38 +1585,70 @@ class Handler(BaseHTTPRequestHandler):
 # 报价单打印 HTML
 # ---------------------------------------------------------------------------
 def render_quote_html(q):
+    s = get_settings()
     cust = q.get("customer") or {}
+    show_cost = str(s.get("print_show_cost", "0")) == "1"
+    color = s.get("print_color") or "#2e7d4f"
+    company = s.get("print_company") or "绿趣植物空间艺术科技有限公司"
+    slogan = s.get("print_slogan") or ""
+    footer = s.get("print_footer") or ""
+    title = s.get("print_title") or "报价单"
+    note = s.get("print_note") or ""
+    # 付款方式（后台可编辑）
+    pm_label = q.get("payment_method") or ""
+    pms = []
+    try:
+        pms = json.loads(s.get("payment_methods") or "[]")
+    except Exception:
+        pms = []
+    pm_note = ""
+    for x in pms:
+        if x.get("label") == pm_label:
+            pm_note = x.get("note", "")
+            break
+    if pm_label:
+        pay_text = f"{esc(pm_label)}　{esc(pm_note)}"
+    else:
+        pay_text = "（详见合同）"
+    foot_full = esc(footer) + "\n\n" + esc(note)
+
+    cost_th = "<th class='r'>成本</th>" if show_cost else ""
     rows = ""
     for i, it in enumerate(q["items"], 1):
+        cost_td = f"<td class='r'>{money(it.get('cost_price'))}</td>" if show_cost else ""
         rows += (f"<tr><td>{i}</td><td>{esc(it.get('category',''))}</td><td>{esc(it.get('name',''))}</td>"
                  f"<td>{esc(it.get('spec',''))}</td><td class='r'>{esc(it.get('qty',''))}</td>"
                  f"<td>{esc(it.get('unit',''))}</td><td class='r'>{money(it.get('unit_price'))}</td>"
-                 f"<td class='r'>{money(it.get('subtotal'))}</td></tr>")
+                 f"{cost_td}<td class='r'>{money(it.get('subtotal'))}</td></tr>")
     fee = lambda label, v: (f"<tr><td>{label}</td><td class='r'>¥{money(v)}</td></tr>")
+    margin_pct = q.get("margin_pct")
+    if margin_pct in (None, ""):
+        margin_pct = round(to_float(q.get("margin"), 0) * 100, 1)
+    margin_line = f"<tr><td>毛利率</td><td class='r'>{margin_pct}%</td></tr>" if margin_pct not in (None, "") else ""
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>报价单 {esc(q.get('quote_no',''))}</title>
+<title>{esc(title)} {esc(q.get('quote_no',''))}</title>
 <style>
   body{{font-family:'Microsoft YaHei',sans-serif;color:#1a2e22;max-width:880px;margin:0 auto;padding:34px}}
-  .head{{text-align:center;border-bottom:3px solid #2e7d4f;padding-bottom:14px;margin-bottom:20px}}
-  .head h1{{margin:0;color:#1f6b40;font-size:24px}}
+  .head{{text-align:center;border-bottom:3px solid {color};padding-bottom:14px;margin-bottom:20px}}
+  .head h1{{margin:0;color:{color};font-size:24px}}
   .head .sub{{color:#5a6b60;font-size:13px;margin-top:4px}}
   .meta{{display:flex;justify-content:space-between;flex-wrap:wrap;font-size:13px;margin-bottom:16px}}
   .meta div{{margin:3px 0;min-width:48%}}
   table{{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:18px}}
   th,td{{border:1px solid #cfe0d5;padding:7px 8px;text-align:left}}
-  th{{background:#eaf5ee;color:#1f6b40}}
+  th{{background:#eaf5ee;color:{color}}}
   td.r,th.r{{text-align:right}}
   .fees{{width:52%;margin-left:48%}}
-  .total-row td{{font-weight:bold;background:#eaf5ee;color:#1f6b40;font-size:15px}}
+  .total-row td{{font-weight:bold;background:#eaf5ee;color:{color};font-size:15px}}
   .pay{{background:#f6fbf8;border:1px solid #cfe0d5;border-radius:8px;padding:12px 14px;font-size:13px;margin-top:6px}}
   .sign{{display:flex;justify-content:space-between;margin-top:36px;font-size:13px}}
-  .foot{{text-align:center;color:#8a988f;font-size:12px;margin-top:26px}}
+  .foot{{text-align:center;color:#8a988f;font-size:12px;margin-top:26px;white-space:pre-line}}
   @media print{{.noprint{{display:none}}body{{padding:8px}}}}
 </style></head><body>
-<button class="noprint" onclick="window.print()" style="padding:8px 18px;background:#2e7d4f;color:#fff;border:0;border-radius:6px;cursor:pointer;margin-bottom:14px">🖨 打印 / 存为 PDF</button>
+<button class="noprint" onclick="window.print()" style="padding:8px 18px;background:{color};color:#fff;border:0;border-radius:6px;cursor:pointer;margin-bottom:14px">🖨 打印 / 存为 PDF</button>
 <div class="head">
-  <h1>温州绿趣植物空间艺术科技有限公司</h1>
-  <div class="sub">家装阳台植物花园 · 项目报价单 &nbsp;|&nbsp; 让植物成为空间的加分项</div>
+  <h1>{esc(company)}</h1>
+  <div class="sub">{esc(title)}　{('| ' + esc(slogan)) if slogan else ''}</div>
 </div>
 <div class="meta">
   <div><b>报价单号：</b>{esc(q.get('quote_no',''))}</div>
@@ -1559,12 +1658,12 @@ def render_quote_html(q):
   <div><b>阳台面积：</b>{esc(q.get('area',''))} ㎡</div>
   <div><b>状态：</b>{esc(q.get('status',''))}</div>
 </div>
-<h3 style="color:#1f6b40">一、植物与材料明细</h3>
+<h3 style="color:{color}">一、植物与材料明细</h3>
 <table>
-  <thead><tr><th>#</th><th>类别</th><th>名称</th><th>规格</th><th class="r">数量</th><th>单位</th><th class="r">单价</th><th class="r">小计</th></tr></thead>
+  <thead><tr><th>#</th><th>类别</th><th>名称</th><th>规格</th><th class="r">数量</th><th>单位</th><th class="r">单价</th>{cost_th}<th class="r">小计</th></tr></thead>
   <tbody>{rows or '<tr><td colspan=8 style="text-align:center;color:#999">无明细</td></tr>'}</tbody>
 </table>
-<h3 style="color:#1f6b40">二、费用汇总</h3>
+<h3 style="color:{color}">二、费用汇总</h3>
 <table class="fees">
   <tbody>
     {fee('1. 设计费', q.get('design_fee'))}
@@ -1576,16 +1675,16 @@ def render_quote_html(q):
     {fee(f"7. 项目管理费（{round(q.get('mgmt_rate',0)*100,1)}%）", q.get('mgmt_fee'))}
     {fee(f"8. 税金（{round(q.get('tax_rate',0)*100,1)}%）", q.get('tax'))}
     {fee('优惠减免', -abs(q.get('discount',0) or 0)) if q.get('discount') else ''}
+    {margin_line}
     <tr class="total-row"><td>合计</td><td class="r">¥{money(q.get('total'))}</td></tr>
   </tbody>
 </table>
-<div class="pay"><b>付款方式：</b>定金 30% ｜ 中期款 40%（施工开始时）｜ 尾款 30%（验收合格后）　　
-<b>报价有效期：</b>15 天　　{('<b>备注：</b>' + esc(q.get('remark',''))) if q.get('remark') else ''}</div>
+<div class="pay"><b>付款方式：</b>{pay_text}　　{('<b>备注：</b>' + esc(q.get('remark',''))) if q.get('remark') else ''}</div>
 <div class="sign">
   <div>客户签字：______________　日期：__________</div>
-  <div>绿趣（盖章）：______________　设计师：{esc(q.get('created_by',''))}</div>
+  <div>{esc(company)}（盖章）：______________　设计师：{esc(q.get('created_by',''))}</div>
 </div>
-<div class="foot">温州绿趣植物空间艺术科技有限公司 &nbsp;|&nbsp; 鹿城区六虹桥路991号 &nbsp;|&nbsp; 0577-88868293</div>
+<div class="foot">{foot_full}</div>
 </body></html>"""
 
 

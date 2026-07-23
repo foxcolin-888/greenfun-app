@@ -111,6 +111,7 @@ async function switchView(v) {
   if (v === 'forms') return renderForms();
   if (v === 'stats') return renderStats();
   if (v === 'prices') return renderPrices();
+  if (v === 'settings') return renderSettings();
   if (v === 'users') return renderUsers();
 }
 
@@ -358,10 +359,13 @@ async function renderQuote() {
   const q = state.quote;
   const s = state.settings;
   if (!q.params.transport_rate) q.params = {
-    area: '', design_fee: '',
+    area: '', design_fee: '', margin: +s.default_margin || 30,
     transport_rate: +s.transport_rate * 100, mgmt_rate: +s.mgmt_rate * 100,
     tax_rate: +s.tax_rate * 100, discount: 0
   };
+  const tiers = (s.margin_tiers || '').split(',').map(x => x.trim()).filter(Boolean).map(Number);
+  let pmList = []; try { pmList = JSON.parse(s.payment_methods || '[]'); } catch { pmList = []; }
+  if (!q.payment_method && pmList.length) q.payment_method = pmList[0].label;
   const app = $('#app');
   app.innerHTML = `
     <div class="quote-wrap">
@@ -397,6 +401,18 @@ async function renderQuote() {
       <div class="q-right">
         <div class="section q-params">
           <h3>④ 计价参数</h3>
+          <div class="pfield"><label>毛利率档位</label>
+            <select id="pMargin" class="wfull">
+              ${tiers.map(t=>`<option value="${t}" ${+q.params.margin===t?'selected':''}>${t}%</option>`).join('')}
+              <option value="custom" ${!tiers.includes(+q.params.margin)?'selected':''}>自定义…</option>
+            </select>
+          </div>
+          <div class="pfield" id="pMarginCustomWrap" style="${tiers.includes(+q.params.margin)?'display:none':''}"><label>自定义毛利率(%)</label><input type="number" id="pMarginCustom" value="${tiers.includes(+q.params.margin)?'':esc(q.params.margin)}" min="0" max="95"></div>
+          <div class="pfield"><label>付款方式</label>
+            <select id="pPayment" class="wfull">
+              ${pmList.map(p=>`<option value="${esc(p.label)}" ${q.payment_method===p.label?'selected':''}>${esc(p.label)} ｜ ${esc(p.note||'')}</option>`).join('')}
+            </select>
+          </div>
           <div class="pfield"><label>阳台面积(㎡)</label><input type="number" id="pArea" value="${esc(q.params.area)}" placeholder="用于估算设计费"></div>
           <div class="pfield"><label>设计费(元)</label><input type="number" id="pDesign" value="${esc(q.params.design_fee)}" placeholder="留空=面积×${s.design_fee_per_sqm}(保底${s.design_fee_min})"></div>
           <div class="pfield"><label>运输安装费率(%)</label><input type="number" id="pTrans" value="${esc(q.params.transport_rate)}"></div>
@@ -414,13 +430,24 @@ async function renderQuote() {
   $('#qCustomer').addEventListener('change', onQuoteCustomerChange);
   $('#qFile').addEventListener('change', onQuoteFile);
   $('#qParse').addEventListener('click', onQuoteParse);
-  $('#qAddRow').addEventListener('click', () => { q.items.push({ category: state.categories[0]||'植物-其他', name:'', spec:'', unit:'项', qty:1, unit_price:0, matched:true }); renderQuoteItems(); });
+  $('#qAddRow').addEventListener('click', () => { q.items.push({ category: state.categories[0]||'植物-其他', name:'', spec:'', unit:'项', qty:1, cost_price:0, unit_price:0, matched:true }); renderQuoteItems(); });
   $('#qPick').addEventListener('change', e => {
     const p = state.prices.find(x => x.id == e.target.value);
-    if (p) { q.items.push({ price_id:p.id, category:p.category, name:p.name, spec:p.spec, unit:p.unit, qty:1, unit_price:p.unit_price, matched:true }); renderQuoteItems(); }
+    if (p) { q.items.push({ price_id:p.id, category:p.category, name:p.name, spec:p.spec, unit:p.unit, qty:1, cost_price: p.cost_price, unit_price: p.cost_price, matched:true }); renderQuoteItems(); }
     e.target.value = '';
   });
-  ['pArea','pDesign','pTrans','pMgmt','pTax','pDisc'].forEach(id => $('#'+id).addEventListener('input', syncQuoteParams));
+  // 利润率档位
+  const onMarginChange = () => {
+    const sel = $('#pMargin').value;
+    const isCustom = sel === 'custom';
+    $('#pMarginCustomWrap').style.display = isCustom ? '' : 'none';
+    q.params.margin = isCustom ? num($('#pMarginCustom').value) : +sel;
+    syncQuoteParams();
+  };
+  $('#pMargin').addEventListener('change', onMarginChange);
+  $('#pMarginCustom').addEventListener('input', onMarginChange);
+  $('#pPayment').addEventListener('change', e => { q.payment_method = e.target.value; });
+  ['pArea','pDesign','pTrans','pMgmt','pTax','pDisc','pMarginCustom'].forEach(id => $('#'+id).addEventListener('input', syncQuoteParams));
   $('#qSave').addEventListener('click', () => saveQuote(false));
   $('#qSavePrint').addEventListener('click', () => saveQuote(true));
   if (q.customerId) onQuoteCustomerChange(); else renderQuoteItems();
@@ -448,13 +475,23 @@ async function onQuoteParse() {
   renderQuoteItems();
   toast(`已解析 ${state.quote.items.length} 项`);
 }
+function marginMult() {
+  const m = num(state.quote.params.margin);
+  const fr = m > 1 ? m / 100 : m;
+  return 1 / (1 - Math.min(Math.max(fr, 0), 0.95));
+}
+function itemSell(it) {
+  const cost = num(it.cost_price) || num(it.unit_price) || 0;
+  return Math.round(cost * marginMult() * 100) / 100;
+}
 function renderQuoteItems() {
   const q = state.quote;
   const box = $('#qItems');
   if (!q.items.length) { box.innerHTML = '<div class="empty">暂无明细，粘贴清单解析或手动添加</div>'; syncQuoteParams(); return; }
+  const mult = marginMult();
   box.innerHTML = `
     <table class="q-items-table">
-      <thead><tr><th>类别</th><th>名称</th><th>规格</th><th>数量</th><th>单位</th><th>单价</th><th>小计</th><th></th></tr></thead>
+      <thead><tr><th>类别</th><th>名称</th><th>规格</th><th>数量</th><th>单位</th><th>成本单价</th><th>售价(×${mult.toFixed(3)})</th><th>小计</th><th></th></tr></thead>
       <tbody>
         ${q.items.map((it,i)=>`
           <tr data-i="${i}" class="${it.matched===false?'unmatched':''}">
@@ -463,16 +500,21 @@ function renderQuoteItems() {
             <td><input data-f="spec" class="cell sm" value="${esc(it.spec||'')}"></td>
             <td><input data-f="qty" type="number" class="cell xs" value="${esc(it.qty)}"></td>
             <td><input data-f="unit" class="cell xs" value="${esc(it.unit||'')}"></td>
-            <td><input data-f="unit_price" type="number" class="cell sm" value="${esc(it.unit_price)}"></td>
-            <td class="q-sub">¥${fmt(num(it.qty)*num(it.unit_price))}</td>
+            <td><input data-f="cost_price" type="number" class="cell sm" value="${esc(it.cost_price)}"></td>
+            <td class="q-sub">¥${fmt(itemSell(it))}</td>
+            <td class="q-sub2">¥${fmt(num(it.qty)*itemSell(it))}</td>
             <td><button class="q-del" data-del="${i}">×</button></td>
           </tr>`).join('')}
       </tbody>
     </table>`;
   $$('#qItems [data-f]').forEach(el => el.addEventListener('input', e => {
     const tr = e.target.closest('tr'); const i = +tr.dataset.i; const f = e.target.dataset.f;
-    q.items[i][f] = (f==='qty'||f==='unit_price') ? e.target.value : e.target.value;
-    if (f==='qty'||f==='unit_price') { tr.querySelector('.q-sub').textContent = '¥'+fmt(num(q.items[i].qty)*num(q.items[i].unit_price)); syncQuoteParams(); }
+    q.items[i][f] = (f==='qty'||f==='cost_price') ? e.target.value : e.target.value;
+    if (f==='qty' || f==='cost_price') {
+      tr.querySelector('.q-sub').textContent = '¥'+fmt(itemSell(q.items[i]));
+      tr.querySelector('.q-sub2').textContent = '¥'+fmt(num(q.items[i].qty)*itemSell(q.items[i]));
+      syncQuoteParams();
+    }
   }));
   $$('#qItems [data-del]').forEach(b => b.addEventListener('click', () => { q.items.splice(+b.dataset.del,1); renderQuoteItems(); }));
   syncQuoteParams();
@@ -481,7 +523,7 @@ function catGroup(cat) { const p = (cat||'').split('-')[0]; return ({ '植物':'
 function computeQuote() {
   const q = state.quote; const s = state.settings;
   const g = { plant:0, hardscape:0, soil:0, mep:0 };
-  q.items.forEach(it => { g[catGroup(it.category)] += num(it.qty)*num(it.unit_price); });
+  q.items.forEach(it => { g[catGroup(it.category)] += num(it.qty)*itemSell(it); });
   const area = num($('#pArea')?.value);
   let design = $('#pDesign')?.value;
   design = (design==='' || design==null) ? Math.max(area*num(s.design_fee_per_sqm), num(s.design_fee_min)) : num(design);
@@ -495,7 +537,8 @@ function computeQuote() {
   const tax = (subtotal + mgmt) * txr;
   const disc = num($('#pDisc')?.value);
   const total = subtotal + mgmt + tax - disc;
-  return { area, design, plant:g.plant, hardscape:g.hardscape, soil:g.soil, mep:g.mep, transport, tr, subtotal, mgmt, mr, tax, txr, disc, total };
+  const margin = num(state.quote.params.margin);
+  return { area, design, plant:g.plant, hardscape:g.hardscape, soil:g.soil, mep:g.mep, transport, tr, subtotal, mgmt, mr, tax, txr, disc, total, margin, mult: marginMult() };
 }
 function syncQuoteParams() {
   const c = computeQuote();
@@ -511,6 +554,7 @@ function syncQuoteParams() {
     ${row(`7. 项目管理费 (${(c.mr*100).toFixed(1)}%)`, c.mgmt)}
     ${row(`8. 税金 (${(c.txr*100).toFixed(1)}%)`, c.tax)}
     ${c.disc?`<div class="sum-row"><span>优惠减免</span><b>-¥${fmt(c.disc)}</b></div>`:''}
+    <div class="sum-row" style="color:var(--muted)"><span>毛利率 / 倍率</span><b>${c.margin}% × ${c.mult.toFixed(3)}</b></div>
     <div class="sum-total"><span>合计</span><b>¥${fmt(c.total)}</b></div>`;
 }
 function collectQuotePayload() {
@@ -518,8 +562,10 @@ function collectQuotePayload() {
   return {
     customer_id: q.customerId ? +q.customerId : null,
     title: '阳台花园项目报价',
-    items: q.items.map(it => ({ price_id: it.price_id||null, category: it.category, name: it.name, spec: it.spec, unit: it.unit, qty: num(it.qty), unit_price: num(it.unit_price), matched: it.matched!==false })),
+    items: q.items.map(it => ({ price_id: it.price_id||null, category: it.category, name: it.name, spec: it.spec, unit: it.unit, qty: num(it.qty), cost_price: num(it.cost_price), unit_price: num(it.cost_price), matched: it.matched!==false })),
     area: num($('#pArea').value),
+    margin: num(q.params.margin),
+    payment_method: q.payment_method || '',
     design_fee: $('#pDesign').value === '' ? '' : num($('#pDesign').value),
     transport_rate: num($('#pTrans').value)/100,
     mgmt_rate: num($('#pMgmt').value)/100,
@@ -688,11 +734,11 @@ async function renderPrices() {
       <button class="btn sm" id="saveSettings" style="margin-top:8px">保存公式参数</button>
     </div>
     <table class="price-table">
-      <thead><tr><th>类别</th><th>名称</th><th>规格</th><th>单位</th><th>单价(元)</th><th>操作</th></tr></thead>
+      <thead><tr><th>类别</th><th>名称</th><th>规格</th><th>单位</th><th>成本价(元)</th><th>参考售价(元)</th><th>操作</th></tr></thead>
       <tbody>
         ${state.prices.map(p=>`<tr data-pid="${p.id}">
           <td>${esc(p.category)}</td><td><b>${esc(p.name)}</b></td><td>${esc(p.spec||'')}</td>
-          <td>${esc(p.unit||'')}</td><td>¥${fmt(p.unit_price)}</td>
+          <td>${esc(p.unit||'')}</td><td>¥${fmt(p.cost_price)}</td><td>¥${fmt(p.unit_price)}</td>
           <td><button class="btn sm ghost" data-edit="${p.id}">编辑</button> <button class="btn sm ghost" data-delp="${p.id}">删除</button></td>
         </tr>`).join('')}
       </tbody>
@@ -721,11 +767,12 @@ function editPrice(p, cats) {
       <div class="field"><label>名称 *</label><input id="epName" value="${esc(p.name)}"></div>
       <div class="field"><label>规格</label><input id="epSpec" value="${esc(p.spec||'')}"></div>
       <div class="field"><label>单位</label><input id="epUnit" value="${esc(p.unit||'')}"></div>
-      <div class="field"><label>单价(元)</label><input id="epPrice" type="number" value="${esc(p.unit_price)}"></div>
+      <div class="field"><label>成本价(元) *</label><input id="epCost" type="number" value="${esc(p.cost_price)}"></div>
+      <div class="field"><label>参考售价(元)</label><input id="epPrice" type="number" value="${esc(p.unit_price)}"></div>
     </div><div style="margin-top:14px"><button class="btn" id="epSave">保存</button></div></div></div>`;
   $('#dClose').addEventListener('click', closeDrawer);
   $('#epSave').addEventListener('click', async () => {
-    const body = { category: $('#epCat').value, name: $('#epName').value.trim(), spec: $('#epSpec').value, unit: $('#epUnit').value, unit_price: num($('#epPrice').value) };
+    const body = { category: $('#epCat').value, name: $('#epName').value.trim(), spec: $('#epSpec').value, unit: $('#epUnit').value, cost_price: num($('#epCost').value), unit_price: num($('#epPrice').value) };
     if (!body.name) return toast('请填写名称');
     if (isNew) await api('POST', '/prices', body); else await api('PUT', '/prices/'+p.id, body);
     state.prices = []; state.categories = []; closeDrawer(); toast('已保存'); renderPrices();
@@ -790,6 +837,79 @@ function editUser(u) {
       if (r.error) return toast(r.error);
     }
     closeDrawer(); toast('已保存'); renderUsers();
+  });
+}
+
+// ---------------- 系统设置（管理员） ----------------
+async function renderSettings() {
+  if (!state.settings) state.settings = await api('GET', '/settings');
+  const s = state.settings;
+  let pmEdit = [];
+  try { pmEdit = JSON.parse(s.payment_methods || '[]'); } catch { pmEdit = []; }
+  const renderPm = () => pmEdit.map((p, i) => `
+    <div class="pm-row">
+      <input class="pm-label" data-i="${i}" value="${esc(p.label)}" placeholder="名称如 3-4-3">
+      <input class="pm-note" data-i="${i}" value="${esc(p.note||'')}" placeholder="说明如 定金30%｜中期40%｜尾款30%">
+      <button class="btn sm ghost" data-pmdel="${i}">×</button>
+    </div>`).join('') || '<div class="empty">暂无付款方式，点击下方添加</div>';
+
+  const app = $('#app');
+  app.innerHTML = `
+    <div class="toolbar"><b style="color:var(--green-900)">系统设置（全部可后台自定义）</b></div>
+    <div class="settings-grid">
+      <div class="section">
+        <h3>① 利润率档位</h3>
+        <div class="hint">勾选/输入所需毛利率档位，逗号分隔；报价台将显示这些档位 + 自定义输入。</div>
+        <div class="pfield"><label>档位(%)</label><input id="sMarginTiers" class="wfull" value="${esc(s.margin_tiers)}" placeholder="20,25,30,40,50"></div>
+        <div class="pfield"><label>默认毛利率(%)</label><input id="sDefMargin" type="number" value="${esc(s.default_margin)}" min="0" max="95"></div>
+      </div>
+      <div class="section">
+        <h3>② 付款方式</h3>
+        <div class="hint">可增删改；报价单打印将显示所选付款方式的名称与说明。</div>
+        <div id="pmList">${renderPm()}</div>
+        <button class="btn sm ghost" id="pmAdd" style="margin-top:8px">＋ 添加付款方式</button>
+      </div>
+      <div class="section">
+        <h3>③ 报价单打印样式</h3>
+        <div class="pfield"><label>公司名称</label><input id="pCompany" class="wfull" value="${esc(s.print_company)}"></div>
+        <div class="pfield"><label>标语/副标题</label><input id="pSlogan" class="wfull" value="${esc(s.print_slogan)}"></div>
+        <div class="pfield"><label>标题</label><input id="pTitle" class="wfull" value="${esc(s.print_title)}"></div>
+        <div class="pfield"><label>主色</label><input id="pColor" type="color" value="${esc(s.print_color||'#2e7d4f')}"></div>
+        <div class="pfield"><label>页脚</label><input id="pFooter" class="wfull" value="${esc(s.print_footer)}"></div>
+        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pShowCost" ${s.print_show_cost==='1'?'checked':''}> 报价单显示成本价/毛利率</label></div>
+        <div class="pfield"><label>备注说明</label><textarea id="pNote" class="wfull" rows="3" placeholder="报价有效期、不含项等">${esc(s.print_note)}</textarea></div>
+      </div>
+    </div>
+    <div style="margin:14px 0 40px"><button class="btn" id="sSave">💾 保存系统设置</button></div>`;
+
+  // 付款方式交互
+  const refreshPm = () => { $('#pmList').innerHTML = renderPm(); bindPm(); };
+  const bindPm = () => {
+    $$('#pmList .pm-label, #pmList .pm-note').forEach(el => el.addEventListener('input', e => {
+      const key = e.target.classList.contains('pm-label') ? 'label' : 'note';
+      pmEdit[+e.target.dataset.i][key] = e.target.value;
+    }));
+    $$('#pmList [data-pmdel]').forEach(b => b.addEventListener('click', () => { pmEdit.splice(+b.dataset.pmdel, 1); refreshPm(); }));
+  };
+  bindPm();
+  $('#pmAdd').addEventListener('click', () => { pmEdit.push({ label: '', note: '' }); refreshPm(); });
+
+  $('#sSave').addEventListener('click', async () => {
+    const body = {
+      margin_tiers: $('#sMarginTiers').value,
+      default_margin: $('#sDefMargin').value,
+      payment_methods: JSON.stringify(pmEdit.filter(p => p.label)),
+      print_company: $('#pCompany').value,
+      print_slogan: $('#pSlogan').value,
+      print_title: $('#pTitle').value,
+      print_color: $('#pColor').value,
+      print_footer: $('#pFooter').value,
+      print_show_cost: $('#pShowCost').checked ? '1' : '0',
+      print_note: $('#pNote').value,
+    };
+    await api('PUT', '/settings', body);
+    state.settings = null;
+    toast('系统设置已保存');
   });
 }
 
