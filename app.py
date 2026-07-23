@@ -1069,6 +1069,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._update_settings(body))
 
+        # 预约线索（管理员/店长可删除）
+        if path.startswith("/api/contacts/"):
+            parts = path.split("/")
+            if len(parts) == 4 and parts[3].isdigit() and method == "DELETE":
+                if u["role"] not in ("admin", "manager"):
+                    return self._json({"error": "无权限"}, 403)
+                return self._json(self._delete_contact(int(parts[3])))
+
         # 员工账号（管理员）
         if path == "/api/users" and method == "POST":
             if u["role"] != "admin":
@@ -1346,6 +1354,13 @@ class Handler(BaseHTTPRequestHandler):
         rows = conn.execute("SELECT id, name, phone, service, note, status, created_at FROM contacts ORDER BY id DESC").fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    def _delete_contact(self, cid):
+        conn = get_db()
+        conn.execute("DELETE FROM contacts WHERE id=?", (cid,))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
 
     def _create_user(self, body):
         username = (body.get("username") or "").strip()
