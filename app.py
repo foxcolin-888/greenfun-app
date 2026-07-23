@@ -429,6 +429,12 @@ def init_db():
         status TEXT DEFAULT '草稿', remark TEXT,
         created_by TEXT, approved_by TEXT, created_at TEXT, updated_at TEXT
     )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, phone TEXT, service TEXT, note TEXT,
+        status TEXT DEFAULT '待跟进', created_at TEXT
+    )""")
     conn.commit()
 
     # 种子：账号
@@ -899,6 +905,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
+        # 内部管理后台 /admin/* -> web/admin/
+        if path == "/admin" or path == "/admin/":
+            return self._static("admin/index.html", "text/html; charset=utf-8")
+        if path.startswith("/admin/"):
+            return self._static(path[1:], None)  # 自动推断 content-type
+        # 对外品牌官网根路径 -> web/index.html
         if path in ("/", "/index.html"):
             return self._static("index.html", "text/html; charset=utf-8")
         if path == "/app.js":
@@ -921,12 +933,31 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         return self._api_write(path, self._body(), "DELETE")
 
-    def _static(self, name, ctype):
+    def _static(self, name, ctype=None):
         fp = os.path.join(WEB_DIR, name)
-        if not os.path.exists(fp):
+        if not os.path.exists(fp) or os.path.isdir(fp):
             return self._html_error(404, "资源未找到：%s" % name)
+        if ctype is None:
+            ctype = self._guess_ctype(fp)
         with open(fp, "rb") as f:
             self._send(200, f.read(), ctype)
+
+    def _guess_ctype(self, fp):
+        ext = os.path.splitext(fp)[1].lower()
+        return {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".json": "application/json; charset=utf-8",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".webp": "image/webp",
+            ".ico": "image/x-icon",
+            ".pdf": "application/pdf",
+        }.get(ext, "application/octet-stream")
 
     # ---- API GET ----
     def _api_get(self, path):
@@ -962,6 +993,8 @@ class Handler(BaseHTTPRequestHandler):
             if u["role"] != "admin":
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._list_users())
+        if path == "/api/contacts":
+            return self._json(self._list_contacts())
         if path == "/api/quotes":
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             cid = qs.get("customer_id", [None])[0]
@@ -990,6 +1023,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._login(body)
         if path == "/api/logout" and method == "POST":
             return self._logout()
+        # 官网预约表单（公开接口）
+        if path == "/api/contact" and method == "POST":
+            return self._json(self._create_contact(body), 201)
 
         u = self._need()
         if not u:
@@ -1134,6 +1170,21 @@ class Handler(BaseHTTPRequestHandler):
             out[r["stage"]] = {"data": json.loads(r["data"]), "operator": r["operator"], "updated_at": r["updated_at"]}
         conn.close()
         return out
+
+    def _create_contact(self, body):
+        """官网预约表单提交：保存为待跟进线索。"""
+        name = (body.get("name") or "").strip()
+        phone = (body.get("phone") or "").strip()
+        if not name or not phone:
+            return {"error": "姓名和电话为必填项", "code": 400}
+        conn = get_db()
+        cur = conn.execute(
+            "INSERT INTO contacts (name, phone, service, note, status, created_at) VALUES (?,?,?,?,?,?)",
+            (name, phone, body.get("service"), body.get("note"), "待跟进", now_str()))
+        cid = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return {"id": cid}
 
     def _create_customer(self, body, u):
         t = now_str()
@@ -1287,6 +1338,12 @@ class Handler(BaseHTTPRequestHandler):
     def _list_users(self):
         conn = get_db()
         rows = conn.execute("SELECT id, username, name, role, active, created_at FROM users ORDER BY id").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def _list_contacts(self):
+        conn = get_db()
+        rows = conn.execute("SELECT id, name, phone, service, note, status, created_at FROM contacts ORDER BY id DESC").fetchall()
         conn.close()
         return [dict(r) for r in rows]
 

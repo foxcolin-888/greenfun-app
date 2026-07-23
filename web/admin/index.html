@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>绿趣 · 家装阳台植物花园全流程管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <noscript><style>.noscript-warn{position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;padding:10px 14px;text-align:center;font-family:system-ui,sans-serif;font-size:14px}</style></noscript>
+</head>
+<body>
+  <noscript><div class="noscript-warn">本系统需要启用 JavaScript 才能使用，请在浏览器设置中开启后刷新。</div></noscript>
+  <!-- 登录遮罩 -->
+  <div id="loginGate" class="login-gate">
+    <div class="login-card">
+      <div class="login-brand"><span class="logo">🌿</span>绿趣 · 全流程管理系统</div>
+      <div class="login-sub">家装阳台植物花园 · 内部执行系统</div>
+      <div class="login-field"><label>账号</label><input id="loginUser" placeholder="员工账号" autocomplete="username"></div>
+      <div class="login-field"><label>密码</label><input id="loginPw" type="password" placeholder="密码" autocomplete="current-password"></div>
+      <div id="loginErr" class="login-err"></div>
+      <button class="btn login-btn" id="loginBtn">登 录</button>
+      <div class="login-tip">默认账号：lvquguanliyuan / 123456（管理员）· dianzhang / green123（店长）· xiaoshou / green123（销售）· sheji / green123（设计师）</div>
+      <div class="login-tip" id="bootHint" style="opacity:.7">首次加载可能稍慢（服务偶发休眠），若长时间空白请按 Ctrl / Cmd + Shift + R 刷新</div>
+    </div>
+  </div>
+
+  <header class="topbar hidden" id="topbar">
+    <div class="brand">
+      <span class="logo">🌿</span>
+      <div>
+        <div class="brand-name">绿趣 · 全流程管理</div>
+        <div class="brand-sub">家装阳台植物花园 · 内部执行系统</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-btn active" data-view="customers">客户档案</button>
+      <button class="nav-btn" data-view="kanban">进度看板</button>
+      <button class="nav-btn" data-view="quote">报价台</button>
+      <button class="nav-btn" data-view="contacts">预约线索</button>
+      <button class="nav-btn" data-view="forms">表单模板库</button>
+      <button class="nav-btn" data-view="stats">数据统计</button>
+      <button class="nav-btn" data-view="prices" data-role="admin,manager">价格库</button>
+      <button class="nav-btn" data-view="settings" data-role="admin">系统设置</button>
+      <button class="nav-btn" data-view="users" data-role="admin">员工账号</button>
+    </nav>
+    <div class="userbox">
+      <div class="ub-info"><span class="ub-name" id="ubName"></span><span class="ub-role" id="ubRole"></span></div>
+      <button class="btn sm ghost" id="logoutBtn">登出</button>
+    </div>
+  </header>
+
+  <main id="app" class="hidden"></main>
+
+  <!-- 详情抽屉 -->
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-mask" id="drawerMask"></div>
+    <aside class="drawer-panel" id="drawerPanel"></aside>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
