@@ -254,7 +254,7 @@ DEFAULT_SETTINGS = {
     "margin_tiers": "20,25,30,40,50",
     "default_margin": "30",        # 默认毛利率(%)
     # 付款方式（JSON 数组：[{label, note}]，后台可编辑）
-    "payment_methods": '[{"label":"全款","note":"签约即付全款"},{"label":"3-4-3","note":"定金30% ｜ 中期款40%(施工开始) ｜ 尾款30%(验收合格)"},{"label":"5-5","note":"首付50% ｜ 尾款50%(验收合格)"}]',
+    "payment_methods": '[{"label":"全款","note":"签约即付全款"},{"label":"3-4-3","note":"定金30% ｜ 中期款40%(施工开始) ｜ 尾款30%(验收合格)"},{"label":"5-5","note":"首付50% ｜ 尾款50%(验收合格)"},{"label":"方案确认-验收付清","note":"方案确认后付款50%，完工验收后付剩余50%"}]',
     # 打印样式（后台可编辑）
     "print_company": "温州绿趣植物空间艺术科技有限公司",
     "print_slogan": "让植物成为空间的加分项",
@@ -456,6 +456,9 @@ def init_db():
     # 账号迁移：将旧管理员 admin 平滑迁移为新管理员账号（无论全新库还是已有库都生效）
     _migrate_admin(conn)
 
+    # 付款方式迁移：新版默认方案自动追加到已有库，避免老库缺少新选项
+    _migrate_payment_methods(conn)
+
     conn.close()
 
 
@@ -483,6 +486,27 @@ def _migrate_admin(conn):
             conn.execute("UPDATE users SET role=?, pw=?, active=1 WHERE id=?",
                          (new_role, hash_pw(new_pw), exist_new["id"]))
             conn.commit()
+
+
+def _migrate_payment_methods(conn):
+    """在老数据库上自动追加新版默认付款方式，不覆盖用户自定义项。"""
+    row = conn.execute("SELECT value FROM settings WHERE key=?", ("payment_methods",)).fetchone()
+    current = []
+    try:
+        current = json.loads(row["value"]) if row and row["value"] else []
+        if not isinstance(current, list):
+            current = []
+    except Exception:
+        current = []
+    default_labels = {x["label"] for x in json.loads(DEFAULT_SETTINGS["payment_methods"])}
+    existing_labels = {x.get("label") for x in current if isinstance(x, dict)}
+    for x in json.loads(DEFAULT_SETTINGS["payment_methods"]):
+        if x["label"] not in existing_labels:
+            current.append(x)
+    if current:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
+                     ("payment_methods", json.dumps(current, ensure_ascii=False)))
+        conn.commit()
 
 
 def _migrate_schema(conn):
@@ -1587,7 +1611,8 @@ class Handler(BaseHTTPRequestHandler):
 def render_quote_html(q):
     s = get_settings()
     cust = q.get("customer") or {}
-    show_cost = str(s.get("print_show_cost", "0")) == "1"
+    # 客户版报价单：强制不显示成本价与毛利率，避免商业信息泄露
+    show_cost = False
     color = s.get("print_color") or "#2e7d4f"
     company = s.get("print_company") or "绿趣植物空间艺术科技有限公司"
     slogan = s.get("print_slogan") or ""
@@ -1621,10 +1646,11 @@ def render_quote_html(q):
                  f"<td>{esc(it.get('unit',''))}</td><td class='r'>{money(it.get('unit_price'))}</td>"
                  f"{cost_td}<td class='r'>{money(it.get('subtotal'))}</td></tr>")
     fee = lambda label, v: (f"<tr><td>{label}</td><td class='r'>¥{money(v)}</td></tr>")
-    margin_pct = q.get("margin_pct")
-    if margin_pct in (None, ""):
-        margin_pct = round(to_float(q.get("margin"), 0) * 100, 1)
-    margin_line = f"<tr><td>毛利率</td><td class='r'>{margin_pct}%</td></tr>" if margin_pct not in (None, "") else ""
+    # margin_pct = q.get("margin_pct")
+    # if margin_pct in (None, ""):
+    #     margin_pct = round(to_float(q.get("margin"), 0) * 100, 1)
+    # 客户版报价单不显示毛利率
+    margin_line = ""
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <title>{esc(title)} {esc(q.get('quote_no',''))}</title>
 <style>

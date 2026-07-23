@@ -409,9 +409,10 @@ async function renderQuote() {
           </div>
           <div class="pfield" id="pMarginCustomWrap" style="${tiers.includes(+q.params.margin)?'display:none':''}"><label>自定义毛利率(%)</label><input type="number" id="pMarginCustom" value="${tiers.includes(+q.params.margin)?'':esc(q.params.margin)}" min="0" max="95"></div>
           <div class="pfield"><label>付款方式</label>
-            <select id="pPayment" class="wfull">
-              ${pmList.map(p=>`<option value="${esc(p.label)}" ${q.payment_method===p.label?'selected':''}>${esc(p.label)} ｜ ${esc(p.note||'')}</option>`).join('')}
-            </select>
+            <input list="pmDataList" id="pPayment" class="wfull" value="${esc(q.payment_method || '')}" placeholder="可直接输入，或点选已有方案">
+            <datalist id="pmDataList">
+              ${pmList.map(p=>`<option value="${esc(p.label)}">${esc(p.label)} ｜ ${esc(p.note||'')}</option>`).join('')}
+            </datalist>
           </div>
           <div class="pfield"><label>阳台面积(㎡)</label><input type="number" id="pArea" value="${esc(q.params.area)}" placeholder="用于估算设计费"></div>
           <div class="pfield"><label>设计费(元)</label><input type="number" id="pDesign" value="${esc(q.params.design_fee)}" placeholder="留空=面积×${s.design_fee_per_sqm}(保底${s.design_fee_min})"></div>
@@ -442,11 +443,12 @@ async function renderQuote() {
     const isCustom = sel === 'custom';
     $('#pMarginCustomWrap').style.display = isCustom ? '' : 'none';
     q.params.margin = isCustom ? num($('#pMarginCustom').value) : +sel;
+    renderQuoteItems(); // 重新计算左侧明细售价与小计
     syncQuoteParams();
   };
   $('#pMargin').addEventListener('change', onMarginChange);
   $('#pMarginCustom').addEventListener('input', onMarginChange);
-  $('#pPayment').addEventListener('change', e => { q.payment_method = e.target.value; });
+  $('#pPayment').addEventListener('input', e => { q.payment_method = e.target.value; });
   ['pArea','pDesign','pTrans','pMgmt','pTax','pDisc','pMarginCustom'].forEach(id => $('#'+id).addEventListener('input', syncQuoteParams));
   $('#qSave').addEventListener('click', () => saveQuote(false));
   $('#qSavePrint').addEventListener('click', () => saveQuote(true));
@@ -876,7 +878,7 @@ async function renderSettings() {
         <div class="pfield"><label>标题</label><input id="pTitle" class="wfull" value="${esc(s.print_title)}"></div>
         <div class="pfield"><label>主色</label><input id="pColor" type="color" value="${esc(s.print_color||'#2e7d4f')}"></div>
         <div class="pfield"><label>页脚</label><input id="pFooter" class="wfull" value="${esc(s.print_footer)}"></div>
-        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pShowCost" ${s.print_show_cost==='1'?'checked':''}> 报价单显示成本价/毛利率</label></div>
+        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pShowCost" ${s.print_show_cost==='1'?'checked':''}> 内部明细显示成本价/毛利率（给客户打印版始终隐藏）</label></div>
         <div class="pfield"><label>备注说明</label><textarea id="pNote" class="wfull" rows="3" placeholder="报价有效期、不含项等">${esc(s.print_note)}</textarea></div>
       </div>
     </div>
