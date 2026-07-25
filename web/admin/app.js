@@ -1146,7 +1146,6 @@ function openSchemeEditor(raw) {
       aspect: gen.aspect || 'auto',
       quality: gen.quality || 'sd',
       n: gen.n || 1,
-      api_key: gen.api_key || '',
       // 反解析真实配置
       provider: gen.provider || '',
       model: gen.model || '',
@@ -1190,7 +1189,7 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>③ AI 生成效果图</h3>
-        <div class="hint">选择模型、画面比例与画质后生成。画质可选至 4K；选「自定义 (不限制)」可填任意宽×高像素。默认 Pollinations 免费免 Key；豆包/OpenAI 需在系统设置或下方填写 API Key。</div>
+        <div class="hint">选择模型、画面比例与画质后直接生成，画质可选至 4K，也可选「自定义 (不限制)」填任意宽×高。默认 Pollinations 免费免 Key、开箱即用；豆包 / OpenAI / 硅基流动等付费模型由管理员在「系统设置 → 生图模型」统一配置平台 API Key，员工无需填写任何 Key。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
 
         <div class="gen-control-bar">
@@ -1219,12 +1218,6 @@ function renderSchemeEditor() {
           <div class="gen-field">
             <label>张数</label>
             <select id="scN" class="wfull">${[1,2,3,4].map(n => `<option value="${n}" ${s.gen_config.n == n ? 'selected' : ''}>${n} 张</option>`).join('')}</select>
-          </div>
-        </div>
-        <div class="gen-key-row" id="scKeyRow" style="display:none">
-          <div class="gen-field" style="flex:1">
-            <label>API Key <span style="color:var(--muted);font-weight:400">（仅本次使用，不保存到系统设置）</span></label>
-            <input id="scApiKey" type="password" class="wfull" value="${esc(s.gen_config.api_key || '')}" placeholder="豆包填火山引擎 API Key，OpenAI 填对应 Key">
           </div>
         </div>
         <div id="scSizePreview" class="gen-size-preview"></div>
@@ -1325,13 +1318,11 @@ function onSchemeModelChange() {
   if (hint) hint.textContent = preset.desc || '';
   const tag = $('#scProviderTag');
   if (tag) {
-    if (preset.provider === 'pollinations') tag.textContent = '免费免 Key';
-    else if (preset.provider === 'hf') tag.textContent = '需 Hugging Face Token（免费额度）';
-    else if (preset.provider === 'openai') tag.textContent = '需 API Key';
+    if (preset.provider === 'pollinations') tag.textContent = '免费免 Key（开箱即用）';
+    else if (preset.provider === 'hf') tag.textContent = '需平台配置 HF Token（管理员设置）';
+    else if (preset.provider === 'openai') tag.textContent = '需平台配置 API Key（管理员设置）';
     else tag.textContent = '使用系统设置';
   }
-  const keyRow = $('#scKeyRow');
-  if (keyRow) keyRow.style.display = (preset.provider === 'openai' || preset.provider === 'hf') ? 'flex' : 'none';
   updateGenSizePreview();
 }
 function onSchemeQualityChange() {
@@ -1371,13 +1362,11 @@ async function genSchemeImages() {
   let cw, ch;
   if (quality === 'custom') { cw = +$('#scCw').value || 4096; ch = +$('#scCh').value || 4096; }
   const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024', cw, ch);
-  const apiKey = $('#scApiKey') ? $('#scApiKey').value.trim() : '';
-
-  // 记忆本次选择
+  // 记忆本次选择（不含 Key：平台 Key 由系统设置统一提供，不落盘到方案）
   state.scheme.gen_config = {
     model_id: modelId, aspect, quality, n,
     provider: preset.provider, model: preset.model, base_url: preset.base_url,
-    size, api_key: apiKey
+    size
   };
 
   const btn = $('#scGen');
@@ -1389,7 +1378,6 @@ async function genSchemeImages() {
     if (preset.model) payload.model = preset.model;
     if (preset.base_url) payload.base_url = preset.base_url;
     if (size) payload.size = size;
-    if (apiKey) payload.api_key = apiKey;
     // OpenAI/DALL-E 支持 standard/hd；豆包文档未明确支持 quality，传非标准值可能报错
     if (quality === 'sd') payload.quality = 'standard';
     else if (quality === 'hd') payload.quality = 'hd';

@@ -1831,8 +1831,12 @@ class Handler(BaseHTTPRequestHandler):
         watermark = str(body.get("watermark", s.get("img_gen_watermark") or "0")).strip()
         model = (body.get("model") or s.get("img_gen_model") or "").strip()
         base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
-        # 平台级 Key（系统设置）优先；个人临时 Key 次之
+        # 平台级 Key（系统设置）优先；方案 B：员工端不再传入个人 Key
         api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
+        # 需要 Key 的渠道若未配置平台级 Key，提前拦截（避免白扣积分）
+        if provider in ("openai", "hf") and not api_key:
+            return {"error": ("Hugging Face 模型" if provider == "hf" else "豆包 / OpenAI / 硅基流动等模型")
+                    + "需要平台 API Key，请由管理员在「系统设置 → 生图模型」中统一配置后使用。"}
         try:
             w, h = size.lower().split("x")
             w, h = int(w), int(h)
