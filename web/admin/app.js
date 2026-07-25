@@ -27,6 +27,41 @@ const state = {
 };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// 方案设计 · AI 生图模型预设
+const IMG_MODELS = [
+  { id: 'pollinations-flux', name: 'Pollinations Flux（免费免 Key）', provider: 'pollinations', model: 'flux', base_url: '', quality: 'standard', desc: '免费免 Key，速度中等，适合快速出图' },
+  { id: 'doubao-seedream-5-lite', name: '豆包 Seedream 5.0 Lite', provider: 'openai', model: 'doubao-seedream-5-0-lite-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包最新轻量版，支持 2K/3K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-5', name: '豆包 Seedream 5.0', provider: 'openai', model: 'doubao-seedream-5-0-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包旗舰版，支持 2K/3K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-4-5', name: '豆包 Seedream 4.5', provider: 'openai', model: 'doubao-seedream-4-5-251128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包 4.5，支持 2K/4K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-4', name: '豆包 Seedream 4.0', provider: 'openai', model: 'doubao-seedream-4-0-250828', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包 4.0，支持 1K/2K/4K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-3', name: '豆包 Seedream 3.0-t2i', provider: 'openai', model: 'doubao-seedream-3-0-t2i-250415', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包文生图基础版，512–2048 像素，需火山引擎 API Key' },
+  { id: 'openai-dall-e-3', name: 'OpenAI DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: '', quality: 'hd', desc: 'OpenAI 官方，按张计费' },
+  { id: 'openai-gpt-image-1', name: 'OpenAI GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: '', quality: 'hd', desc: 'OpenAI 最新生图模型，按张计费' },
+  { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', quality: 'standard', desc: '读取系统设置→生图模型中的配置' },
+];
+const ASPECT_RATIOS = [
+  { id: 'auto', label: '自动', size: '' },
+  { id: '1:1', label: '1:1', size: '1024x1024' },
+  { id: '16:9', label: '16:9', size: '1024x576' },
+  { id: '9:16', label: '9:16', size: '576x1024' },
+  { id: '4:3', label: '4:3', size: '1024x768' },
+  { id: '3:4', label: '3:4', size: '768x1024' },
+  { id: '3:2', label: '3:2', size: '1024x683' },
+  { id: '2:3', label: '2:3', size: '683x1024' },
+];
+const QUALITY_SIZES = {
+  // 基于 1024 短边的倍数；超出部分前端做就近取整
+  '1:1': { sd: '1024x1024', hd: '1536x1536', '2k': '2048x2048', '4k': '4096x4096' },
+  '16:9': { sd: '1024x576', hd: '1536x864', '2k': '2048x1152', '4k': '3840x2160' },
+  '9:16': { sd: '576x1024', hd: '864x1536', '2k': '1152x2048', '4k': '2160x3840' },
+  '4:3': { sd: '1024x768', hd: '1536x1152', '2k': '2048x1536', '4k': '4096x3072' },
+  '3:4': { sd: '768x1024', hd: '1152x1536', '2k': '1536x2048', '4k': '3072x4096' },
+  '3:2': { sd: '1024x683', hd: '1536x1024', '2k': '2048x1365', '4k': '4096x2731' },
+  '2:3': { sd: '683x1024', hd: '1024x1536', '2k': '1365x2048', '4k': '2731x4096' },
+};
+const QUALITY_LABELS = { sd: '标清', hd: '高清', '2k': '2K', '4k': '4K' };
+
 function esc(s) {
   return (s == null ? '' : String(s))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -36,6 +71,27 @@ const STATUS_CLASS = { '线索': 'st-lead', '已成交': 'st-deal', '无效': 's
 const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 function fmt(n) { return (Math.round((n || 0) * 100) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmt0(n) { return (n || 0).toLocaleString('zh-CN'); }
+
+// 根据模型预设 + 画面比例 + 画质 计算最终 size 字符串
+function computeGenSize(modelId, aspectId, qualityId, fallbackSize) {
+  if (aspectId === 'auto') return fallbackSize || '1024x1024';
+  const map = QUALITY_SIZES[aspectId];
+  if (!map) return fallbackSize || '1024x1024';
+  return map[qualityId] || map.sd || fallbackSize || '1024x1024';
+}
+// 根据设置值反推当前选中的预设
+function findImgModelPreset(cfg) {
+  if (!cfg) return IMG_MODELS[0];
+  if (cfg.provider === 'pollinations') return IMG_MODELS.find(m => m.id === 'pollinations-flux') || IMG_MODELS[0];
+  const m = IMG_MODELS.find(x => x.provider === cfg.provider && x.model === cfg.model && x.id !== 'custom');
+  return m || IMG_MODELS[IMG_MODELS.length - 1]; // custom
+}
+function parseQualityFromSize(aspectId, size) {
+  if (aspectId === 'auto') return 'sd';
+  const map = QUALITY_SIZES[aspectId] || {};
+  for (const k of ['sd', 'hd', '2k', '4k']) { if (map[k] === size) return k; }
+  return 'sd';
+}
 
 async function api(method, path, body) {
   const opt = { method, headers: { 'Content-Type': 'application/json' } };
@@ -915,17 +971,27 @@ async function renderSettings() {
       </div>
       <div class="section">
         <h3>④ 生图模型（AI 效果图）</h3>
-        <div class="hint">默认 Pollinations 免费免 Key，开箱即用；如需更高质量可切换到 OpenAI 兼容接口（通义万相 / 智谱 / 火山等），填入对应 API Key 与 Base URL。</div>
+        <div class="hint">默认 Pollinations 免费免 Key，开箱即用；如需豆包/OpenAI 等付费模型，填入对应 API Key 与 Base URL。方案设计页可临时切换模型、画面比例与画质。</div>
+        <div class="pfield"><label>快速选择模型</label><select id="gPreset" class="wfull">
+          <option value="">— 手动填写 —</option>
+          ${IMG_MODELS.filter(m => m.id !== 'custom').map(m => `<option value="${m.id}">${m.name}</option>`).join('')}
+        </select></div>
         <div class="pfield"><label>供应商</label><select id="gProvider" class="wfull">
           <option value="pollinations" ${s.img_gen_provider === 'pollinations' ? 'selected' : ''}>Pollinations（免费 · 免 Key）</option>
-          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（通义万相 / 智谱 / 火山等）</option>
+          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（豆包 / 通义万相 / 智谱 / 火山等）</option>
         </select></div>
-        <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="仅 OpenAI 兼容模式需要"></div>
-        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / wanx / cogview"></div>
-        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="如 https://api.openai.com/v1"></div>
-        <div class="pfield"><label>尺寸</label><select id="gSize" class="wfull">
-          ${['1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', '512x512'].map(o => `<option ${s.img_gen_size === o ? 'selected' : ''}>${o}</option>`).join('')}
+        <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="豆包填火山引擎 API Key，OpenAI 填 OpenAI Key"></div>
+        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 doubao-seedream-5-0-260128 / gpt-image-1 / dall-e-3"></div>
+        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="豆包 https://ark.cn-beijing.volces.com/api/v3；OpenAI 留空"></div>
+        <div class="pfield"><label>默认尺寸</label><select id="gSize" class="wfull">
+          ${['1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', '512x512', '2048x2048', '2048x1152', '1152x2048'].map(o => `<option ${s.img_gen_size === o ? 'selected' : ''}>${o}</option>`).join('')}
         </select></div>
+        <div class="pfield"><label>默认画质</label><select id="gQuality" class="wfull">
+          <option value="standard" ${s.img_gen_quality === 'standard' ? 'selected' : ''}>standard（标清）</option>
+          <option value="hd" ${s.img_gen_quality === 'hd' ? 'selected' : ''}>hd（高清）</option>
+        </select></div>
+        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="gWatermark" ${s.img_gen_watermark==='1'?'checked':''}> 添加 "AI生成" 水印（仅部分模型支持，如豆包）</label></div>
+        <div class="hint" style="margin-top:6px">豆包 Seedream 模型 ID 示例：doubao-seedream-5-0-260128、doubao-seedream-5-0-lite-260128、doubao-seedream-4-5-251128、doubao-seedream-4-0-250828、doubao-seedream-3-0-t2i-250415。</div>
       </div>
     </div>
     <div style="margin:14px 0 40px"><button class="btn" id="sSave">💾 保存系统设置</button></div>`;
@@ -941,6 +1007,18 @@ async function renderSettings() {
   };
   bindPm();
   $('#pmAdd').addEventListener('click', () => { pmEdit.push({ label: '', note: '' }); refreshPm(); });
+
+  // 快速选择模型自动填充
+  $('#gPreset').addEventListener('change', () => {
+    const id = $('#gPreset').value;
+    if (!id) return;
+    const m = IMG_MODELS.find(x => x.id === id);
+    if (!m) return;
+    $('#gProvider').value = m.provider;
+    $('#gModel').value = m.model;
+    $('#gBase').value = m.base_url;
+    if (m.quality === 'hd') $('#gQuality').value = 'hd';
+  });
 
   $('#sSave').addEventListener('click', async () => {
     const body = {
@@ -959,6 +1037,8 @@ async function renderSettings() {
       img_gen_model: $('#gModel').value,
       img_gen_base_url: $('#gBase').value,
       img_gen_size: $('#gSize').value,
+      img_gen_quality: $('#gQuality').value,
+      img_gen_watermark: $('#gWatermark').checked ? '1' : '0',
     };
     await api('PUT', '/settings', body);
     state.settings = null;
@@ -1001,6 +1081,7 @@ async function renderScheme() {
 
 function openSchemeEditor(raw) {
   const s = raw || {};
+  const gen = (typeof s.gen_config === 'object' && s.gen_config) ? s.gen_config : {};
   state.scheme = {
     id: s.id || null,
     customer_id: s.customer_id || null,
@@ -1014,6 +1095,18 @@ function openSchemeEditor(raw) {
     items: Array.isArray(s.items) ? s.items.slice() : [],
     status: s.status || '草稿',
     quote_id: s.quote_id || null,
+    gen_config: {
+      model_id: gen.model_id || '',
+      aspect: gen.aspect || 'auto',
+      quality: gen.quality || 'sd',
+      n: gen.n || 1,
+      api_key: gen.api_key || '',
+      // 反解析真实配置
+      provider: gen.provider || '',
+      model: gen.model || '',
+      base_url: gen.base_url || '',
+      size: gen.size || '',
+    }
   };
   openDrawer();
   renderSchemeEditor();
@@ -1051,11 +1144,38 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>③ AI 生成效果图</h3>
-        <div class="hint">根据需求描述生成效果图（内置免费模型，可在系统设置切换付费模型）。生成后可多次生成叠加。</div>
+        <div class="hint">选择模型、画面比例与画质后生成。默认 Pollinations 免费免 Key；豆包/OpenAI 需在系统设置或下方填写 API Key。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
+
+        <div class="gen-control-bar">
+          <div class="gen-field">
+            <label>生图模型</label>
+            <select id="scModel" class="wfull">${IMG_MODELS.map(m => `<option value="${m.id}" ${s.gen_config.model_id === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+            <div class="gen-field-hint" id="scModelHint"></div>
+          </div>
+          <div class="gen-field">
+            <label>画面比例</label>
+            <select id="scAspect" class="wfull">${ASPECT_RATIOS.map(a => `<option value="${a.id}" ${s.gen_config.aspect === a.id ? 'selected' : ''}>${a.label}</option>`).join('')}</select>
+          </div>
+          <div class="gen-field">
+            <label>画质</label>
+            <select id="scQuality" class="wfull">${Object.entries(QUALITY_LABELS).map(([k, v]) => `<option value="${k}" ${s.gen_config.quality === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          </div>
+          <div class="gen-field">
+            <label>张数</label>
+            <select id="scN" class="wfull">${[1,2,3,4].map(n => `<option value="${n}" ${s.gen_config.n == n ? 'selected' : ''}>${n} 张</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="gen-key-row" id="scKeyRow" style="display:none">
+          <div class="gen-field" style="flex:1">
+            <label>API Key <span style="color:var(--muted);font-weight:400">（仅本次使用，不保存到系统设置）</span></label>
+            <input id="scApiKey" type="password" class="wfull" value="${esc(s.gen_config.api_key || '')}" placeholder="豆包填火山引擎 API Key，OpenAI 填对应 Key">
+          </div>
+        </div>
+        <div id="scSizePreview" class="gen-size-preview"></div>
         <div class="q-paste-actions">
-          <select id="scN" class="wfull" style="max-width:120px"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option></select>
-          <button class="btn sm" id="scGen">🎨 生成效果图</button>
+          <button class="btn" id="scGen">🎨 生成效果图</button>
+          <span id="scProviderTag" class="provider-tag"></span>
         </div>
         <div class="scheme-thumbs" id="scImgThumbs">${schemeThumbs(s.images)}</div>
         <div id="scGenMsg" class="q-warn" style="display:none"></div>
@@ -1083,7 +1203,12 @@ function renderSchemeEditor() {
   bindThumbRemove('photo'); bindThumbRemove('image');
   $('#scPhoto').addEventListener('change', onSchemePhoto);
   $('#scGen').addEventListener('click', genSchemeImages);
+  $('#scModel').addEventListener('change', onSchemeModelChange);
+  $('#scAspect').addEventListener('change', updateGenSizePreview);
+  $('#scQuality').addEventListener('change', updateGenSizePreview);
   $('#scAddItem').addEventListener('click', () => { state.scheme.items.push({ category: '植物-其他', name: '', spec: '', qty: 1, unit: '项', cost_price: 0 }); renderSchemeItems(); });
+  onSchemeModelChange();
+  updateGenSizePreview();
   if (s.id) {
     $('#scSave').addEventListener('click', saveScheme);
     $('#scPrint').addEventListener('click', () => printScheme(s.id));
@@ -1128,22 +1253,63 @@ async function onSchemePhoto(e) {
   e.target.value = '';
   toast('已上传 ' + state.scheme.photos.length + ' 张照片');
 }
+function onSchemeModelChange() {
+  const id = $('#scModel').value;
+  const preset = IMG_MODELS.find(m => m.id === id) || IMG_MODELS[0];
+  const hint = $('#scModelHint');
+  if (hint) hint.textContent = preset.desc || '';
+  const tag = $('#scProviderTag');
+  if (tag) tag.textContent = preset.provider === 'pollinations' ? '免费免 Key' : (preset.provider === 'openai' ? '需 API Key' : '使用系统设置');
+  const keyRow = $('#scKeyRow');
+  if (keyRow) keyRow.style.display = (preset.provider === 'openai') ? 'flex' : 'none';
+  updateGenSizePreview();
+}
+function updateGenSizePreview() {
+  const preset = IMG_MODELS.find(m => m.id === $('#scModel').value) || IMG_MODELS[0];
+  const aspect = $('#scAspect').value;
+  const quality = $('#scQuality').value;
+  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024');
+  const box = $('#scSizePreview');
+  if (box) box.textContent = '输出尺寸：' + size + (aspect === 'auto' ? '（跟随系统设置）' : '');
+}
 async function genSchemeImages() {
   const prompt = $('#scPrompt').value.trim();
   if (!prompt) return toast('请先填写生图描述');
   const n = +$('#scN').value || 1;
+  const modelId = $('#scModel').value;
+  const preset = IMG_MODELS.find(m => m.id === modelId) || IMG_MODELS[0];
+  const aspect = $('#scAspect').value;
+  const quality = $('#scQuality').value;
+  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024');
+  const apiKey = $('#scApiKey') ? $('#scApiKey').value.trim() : '';
+
+  // 记忆本次选择
+  state.scheme.gen_config = {
+    model_id: modelId, aspect, quality, n,
+    provider: preset.provider, model: preset.model, base_url: preset.base_url,
+    size, api_key: apiKey
+  };
+
   const btn = $('#scGen');
-  btn.disabled = true; btn.textContent = '生成中…（约 10–60 秒）';
+  btn.disabled = true; btn.textContent = '生成中…（约 10–120 秒）';
   const msg = $('#scGenMsg'); msg.style.display = 'none';
   try {
-    const r = await api('POST', '/scheme/generate', { prompt, n });
+    const payload = { prompt, n, scheme_id: state.scheme.id || null };
+    if (preset.provider) payload.provider = preset.provider;
+    if (preset.model) payload.model = preset.model;
+    if (preset.base_url) payload.base_url = preset.base_url;
+    if (size) payload.size = size;
+    if (apiKey) payload.api_key = apiKey;
+    // OpenAI/DALL-E 支持 quality；豆包部分版本也支持
+    payload.quality = (quality === 'sd' ? 'standard' : 'hd');
+    const r = await api('POST', '/scheme/generate', payload);
     if (r.error) throw new Error(r.error);
     const urls = r.urls || [];
     if (!urls.length) throw new Error('未获取到图片');
     state.scheme.images.push(...urls);
     $('#scImgThumbs').innerHTML = schemeThumbs(state.scheme.images);
     bindThumbRemove('image');
-    toast('已生成 ' + urls.length + ' 张效果图（' + (r.provider || '') + '）');
+    toast('已生成 ' + urls.length + ' 张效果图（' + (r.provider || '') + ' · ' + (r.size || size) + '）');
   } catch (err) {
     msg.style.display = 'block'; msg.textContent = '⚠ ' + err.message;
   } finally {
@@ -1187,7 +1353,8 @@ async function saveScheme() {
   const payload = {
     customer_id: s.customer_id, customer: s.customer, project_name: s.project_name,
     room_type: s.room_type, requirements: s.requirements, concept: s.concept,
-    photos: s.photos, images: s.images, items: s.items, status: s.status
+    photos: s.photos, images: s.images, items: s.items, status: s.status,
+    gen_config: s.gen_config || {}
   };
   let r;
   if (s.id) r = await api('PUT', '/schemes/' + s.id, payload);

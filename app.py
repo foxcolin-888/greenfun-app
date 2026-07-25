@@ -266,11 +266,13 @@ DEFAULT_SETTINGS = {
     "print_show_cost": "0",        # 是否在报价单上显示成本价/毛利率(0/1)
     "print_note": "本报价含植物、硬景、辅材及基础施工费用；不含土建与大型水电改造。报价有效期 15 天，以定金到账之日起算。",
     # ---- AI 生图（方案设计模块）----
-    "img_gen_provider": "pollinations",   # pollinations=免费免key / openai=OpenAI兼容(含通义万相/智谱/火山等)
+    "img_gen_provider": "pollinations",   # pollinations=免费免key / openai=OpenAI兼容(含豆包/通义万相/智谱/火山等)
     "img_gen_api_key": "",                 # OpenAI兼容接口 Key（pollinations 留空）
-    "img_gen_model": "",                   # 模型名：pollinations留空；openai=gpt-image-1/dall-e-3；通义万相=wanx2.1-t2i-...
-    "img_gen_base_url": "",                # OpenAI兼容基地址，留空默认 https://api.openai.com/v1（通义万相填兼容模式地址）
+    "img_gen_model": "",                   # 模型名：pollinations留空；openai=gpt-image-1/dall-e-3；豆包=doubao-seedream-5-0-260128；通义万相=wanx2.1-t2i-...
+    "img_gen_base_url": "",                # OpenAI兼容基地址，留空默认 https://api.openai.com/v1（豆包填 https://ark.cn-beijing.volces.com/api/v3）
     "img_gen_size": "1024x1024",           # 生图尺寸
+    "img_gen_quality": "standard",         # 画质：standard/hd（OpenAI/DALL-E 用；豆包主要用尺寸控制）
+    "img_gen_watermark": "0",              # 是否添加水印（豆包支持；1=添加，0=不添加）
 }
 
 # ---------------------------------------------------------------------------
@@ -458,6 +460,7 @@ def init_db():
         items TEXT,
         status TEXT DEFAULT '草稿',
         quote_id INTEGER,
+        gen_config TEXT DEFAULT '{}',
         created_by TEXT,
         created_at TEXT,
         updated_at TEXT
@@ -556,6 +559,7 @@ def _migrate_schema(conn):
     add_col("price_items", "cost_price", "REAL", 0)
     add_col("quotes", "margin", "REAL", 0)
     add_col("quotes", "payment_method", "TEXT", "")
+    add_col("schemes", "gen_config", "TEXT", "{}")
 
 
 def now_str():
@@ -1662,31 +1666,53 @@ class Handler(BaseHTTPRequestHandler):
             n = 1
         n = max(1, min(n, 4))
         s = get_settings()
-        provider = (s.get("img_gen_provider") or "pollinations").strip() or "pollinations"
-        size = (s.get("img_gen_size") or "1024x1024").strip() or "1024x1024"
+        # 请求级参数优先，未提供时回退到系统设置
+        provider = (body.get("provider") or s.get("img_gen_provider") or "pollinations").strip() or "pollinations"
+        size = (body.get("size") or s.get("img_gen_size") or "1024x1024").strip() or "1024x1024"
+        quality = (body.get("quality") or s.get("img_gen_quality") or "standard").strip() or "standard"
+        watermark = str(body.get("watermark", s.get("img_gen_watermark") or "0")).strip()
+        model = (body.get("model") or s.get("img_gen_model") or "").strip()
+        base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
+        api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
         try:
             w, h = size.lower().split("x")
             w, h = int(w), int(h)
         except Exception:
             w, h = 1024, 1024
+        # 把本次生图配置持久化到方案（方便下次复用）
+        scheme_id = body.get("scheme_id")
+        if scheme_id and str(scheme_id).isdigit():
+            gen_config = {
+                "provider": provider, "model": model, "base_url": base_url,
+                "size": size, "quality": quality, "watermark": watermark
+            }
+            conn = get_db()
+            conn.execute("UPDATE schemes SET gen_config=? WHERE id=?",
+                         (json.dumps(gen_config, ensure_ascii=False), int(scheme_id)))
+            conn.commit()
+            conn.close()
+        cfg = {"provider": provider, "model": model, "base_url": base_url,
+               "api_key": api_key, "size": size, "quality": quality, "watermark": watermark}
         try:
             if provider == "pollinations":
-                urls = self._gen_pollinations(prompt, w, h, n)
+                urls = self._gen_pollinations(prompt, w, h, n, cfg)
             else:
-                urls = self._gen_openai(s, prompt, w, h, n)
+                urls = self._gen_openai(s, prompt, w, h, n, cfg)
         except Exception as e:
             return {"error": "生图失败：" + str(e)}
         if not urls:
             return {"error": "生图失败：未获取到图片，请检查 API Key / 网络 / 模型名"}
-        return {"urls": urls, "url": urls[0], "provider": provider}
+        return {"urls": urls, "url": urls[0], "provider": provider, "model": model, "size": size, "quality": quality}
 
-    def _gen_pollinations(self, prompt, w, h, n):
+    def _gen_pollinations(self, prompt, w, h, n, cfg=None):
+        cfg = cfg or {}
         enc = urllib.parse.quote(prompt, safe="")
         out = []
+        model = cfg.get("model") or "flux"
         for _ in range(n):
             seed = secrets.randbelow(10 ** 9)
-            url = ("https://image.pollinations.ai/prompt/%s?width=%d&height=%d&seed=%d&model=flux&nologo=true"
-                   % (enc, w, h, seed))
+            url = ("https://image.pollinations.ai/prompt/%s?width=%d&height=%d&seed=%d&model=%s&nologo=true"
+                   % (enc, w, h, seed, urllib.parse.quote(model, safe="")))
             req = urllib.request.Request(url, headers={"User-Agent": "greenfun/1.0"})
             with urllib.request.urlopen(req, timeout=90) as resp:
                 raw = resp.read()
@@ -1698,18 +1724,30 @@ class Handler(BaseHTTPRequestHandler):
             out.append("/uploads/schemes/" + name)
         return out
 
-    def _gen_openai(self, s, prompt, w, h, n):
-        key = (s.get("img_gen_api_key") or "").strip()
+    def _gen_openai(self, s, prompt, w, h, n, cfg=None):
+        cfg = cfg or {}
+        key = (cfg.get("api_key") or s.get("img_gen_api_key") or "").strip()
         if not key:
-            raise Exception("未配置 API Key（请在系统设置→生图模型填写）")
-        base = (s.get("img_gen_base_url") or "https://api.openai.com/v1").strip() or "https://api.openai.com/v1"
-        model = (s.get("img_gen_model") or "gpt-image-1").strip() or "gpt-image-1"
-        payload = {"model": model, "prompt": prompt, "n": n, "size": "%dx%d" % (w, h), "response_format": "b64_json"}
+            raise Exception("未配置 API Key（请在系统设置→生图模型填写，或在生成时填写）")
+        base = (cfg.get("base_url") or s.get("img_gen_base_url") or "https://api.openai.com/v1").strip() or "https://api.openai.com/v1"
+        model = (cfg.get("model") or s.get("img_gen_model") or "gpt-image-1").strip() or "gpt-image-1"
+        quality = (cfg.get("quality") or s.get("img_gen_quality") or "standard").strip() or "standard"
+        watermark = str(cfg.get("watermark", s.get("img_gen_watermark") or "0")).strip()
+        size = cfg.get("size") or s.get("img_gen_size") or "%dx%d" % (w, h)
+        payload = {"model": model, "prompt": prompt, "n": n, "size": size, "response_format": "b64_json"}
+        # OpenAI/DALL-E 支持 quality；豆包 Seedream 部分版本支持，传了不会错
+        if quality in ("standard", "hd"):
+            payload["quality"] = quality
+        # 豆包支持 watermark 参数：false 去掉 "AI生成" 水印
+        if watermark in ("1", "true", "True"):
+            payload["watermark"] = True
+        elif watermark in ("0", "false", "False"):
+            payload["watermark"] = False
         req = urllib.request.Request(
             base.rstrip("/") + "/images/generations",
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             d = json.loads(resp.read().decode("utf-8"))
         out = []
         for item in d.get("data", []):
@@ -1717,11 +1755,15 @@ class Handler(BaseHTTPRequestHandler):
             if not b64:
                 continue
             if b64.startswith("http"):
-                with urllib.request.urlopen(urllib.request.Request(b64, headers={"User-Agent": "greenfun/1.0"}), timeout=60) as r2:
+                with urllib.request.urlopen(urllib.request.Request(b64, headers={"User-Agent": "greenfun/1.0"}), timeout=90) as r2:
                     raw = r2.read()
             else:
                 raw = base64.b64decode(b64)
-            name = secrets.token_hex(12) + ".jpg"
+            ext = ".jpg"
+            # 豆包 5.0-lite 支持 output_format=png，根据返回 content-type 判断更准
+            if raw[:8].startswith(b"\x89PNG\r\n\x1a\n"):
+                ext = ".png"
+            name = secrets.token_hex(12) + ext
             with open(os.path.join(self._upload_dir(), name), "wb") as f:
                 f.write(raw)
             out.append("/uploads/schemes/" + name)
@@ -1746,21 +1788,30 @@ class Handler(BaseHTTPRequestHandler):
                 d[k] = json.loads(d[k] or "[]")
             except Exception:
                 d[k] = []
+        try:
+            d["gen_config"] = json.loads(d.get("gen_config") or "{}")
+        except Exception:
+            d["gen_config"] = {}
         return d
 
     def _create_scheme(self, body, u):
         t = now_str()
         conn = get_db()
+        gen_config = body.get("gen_config") or {}
+        if not isinstance(gen_config, dict):
+            gen_config = {}
         cur = conn.execute(
             """INSERT INTO schemes (customer_id, customer, project_name, room_type, requirements, concept,
-               photos, images, items, status, quote_id, created_by, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               photos, images, items, status, quote_id, gen_config, created_by, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.get("customer_id") or None, body.get("customer", ""), body.get("project_name", ""),
              body.get("room_type", ""), body.get("requirements", ""), body.get("concept", ""),
              json.dumps(body.get("photos", []), ensure_ascii=False),
              json.dumps(body.get("images", []), ensure_ascii=False),
              json.dumps(body.get("items", []), ensure_ascii=False),
-             body.get("status", "草稿"), None, u["name"], t, t))
+             body.get("status", "草稿"), None,
+             json.dumps(gen_config, ensure_ascii=False),
+             u["name"], t, t))
         sid = cur.lastrowid
         conn.commit()
         conn.close()
@@ -1773,16 +1824,22 @@ class Handler(BaseHTTPRequestHandler):
         if not r:
             conn.close()
             return {"error": "not found"}
+        gen_config = body.get("gen_config")
+        if gen_config is None:
+            gen_config = json.loads(r.get("gen_config") or "{}")
+        elif not isinstance(gen_config, dict):
+            gen_config = {}
         conn.execute(
             """UPDATE schemes SET customer_id=?, customer=?, project_name=?, room_type=?, requirements=?,
-               concept=?, photos=?, images=?, items=?, status=?, updated_at=? WHERE id=?""",
+               concept=?, photos=?, images=?, items=?, status=?, gen_config=?, updated_at=? WHERE id=?""",
             (body.get("customer_id", r["customer_id"]), body.get("customer", r["customer"]),
              body.get("project_name", r["project_name"]), body.get("room_type", r["room_type"]),
              body.get("requirements", r["requirements"]), body.get("concept", r["concept"]),
              json.dumps(body.get("photos", json.loads(r["photos"] or "[]")), ensure_ascii=False),
              json.dumps(body.get("images", json.loads(r["images"] or "[]")), ensure_ascii=False),
              json.dumps(body.get("items", json.loads(r["items"] or "[]")), ensure_ascii=False),
-             body.get("status", r["status"]), t, sid))
+             body.get("status", r["status"]),
+             json.dumps(gen_config, ensure_ascii=False), t, sid))
         conn.commit()
         conn.close()
         return self._scheme_detail(sid)
