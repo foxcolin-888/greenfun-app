@@ -43,11 +43,16 @@
       <button class="nav-btn" data-view="forms">表单模板库</button>
       <button class="nav-btn" data-view="stats">数据统计</button>
       <button class="nav-btn" data-view="prices" data-role="admin,manager">价格库</button>
+      <button class="nav-btn" data-view="credits" data-role="admin,manager">积分管理</button>
       <button class="nav-btn" data-view="settings" data-role="admin">系统设置</button>
       <button class="nav-btn" data-view="users" data-role="admin">员工账号</button>
     </nav>
     <div class="userbox">
-      <div class="ub-info"><span class="ub-name" id="ubName"></span><span class="ub-role" id="ubRole"></span></div>
+      <div class="ub-info">
+        <span class="ub-name" id="ubName"></span>
+        <span class="ub-role" id="ubRole"></span>
+        <span class="ub-credit" id="ubCredit" title="点击刷新积分余额">💎 0</span>
+      </div>
       <button class="btn sm ghost" id="logoutBtn">登出</button>
     </div>
   </header>

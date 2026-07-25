@@ -24,21 +24,28 @@ const state = {
   settings: null,
   categories: [],
   prices: [],
+  creditBalance: 0,
 };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 // 方案设计 · AI 生图模型预设
+// credit 为单张消耗积分（0=免费）；最终扣费 = credit × 张数，可被系统设置覆盖
 const IMG_MODELS = [
-  { id: 'pollinations-flux', name: 'Pollinations Flux（免费免 Key）', provider: 'pollinations', model: 'flux', base_url: '', quality: 'standard', desc: '免费免 Key，速度中等，适合快速出图' },
-  { id: 'doubao-seedream-5-lite', name: '豆包 Seedream 5.0 Lite', provider: 'openai', model: 'doubao-seedream-5-0-lite-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包最新轻量版，支持 2K/3K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-5', name: '豆包 Seedream 5.0', provider: 'openai', model: 'doubao-seedream-5-0-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包旗舰版，支持 2K/3K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-4-5', name: '豆包 Seedream 4.5', provider: 'openai', model: 'doubao-seedream-4-5-251128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包 4.5，支持 2K/4K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-4', name: '豆包 Seedream 4.0', provider: 'openai', model: 'doubao-seedream-4-0-250828', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包 4.0，支持 1K/2K/4K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-3', name: '豆包 Seedream 3.0-t2i', provider: 'openai', model: 'doubao-seedream-3-0-t2i-250415', base_url: 'https://ark.cn-beijing.volces.com/api/v3', quality: 'standard', desc: '豆包文生图基础版，512–2048 像素，需火山引擎 API Key' },
-  { id: 'openai-dall-e-3', name: 'OpenAI DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: '', quality: 'hd', desc: 'OpenAI 官方，按张计费' },
-  { id: 'openai-gpt-image-1', name: 'OpenAI GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: '', quality: 'hd', desc: 'OpenAI 最新生图模型，按张计费' },
-  { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', quality: 'standard', desc: '读取系统设置→生图模型中的配置' },
+  { id: 'pollinations-flux', name: 'Pollinations Flux（免费免 Key）', provider: 'pollinations', model: 'flux', base_url: '', credit: 0, quality: 'standard', desc: '免费免 Key，速度中等，适合快速出图' },
+  { id: 'pollinations-turbo', name: 'Pollinations Turbo（免费免 Key）', provider: 'pollinations', model: 'turbo', base_url: '', credit: 0, quality: 'standard', desc: '免费快速版，适合草图预览' },
+  { id: 'pollinations-realism', name: 'Pollinations 写实（免费免 Key）', provider: 'pollinations', model: 'flux-realism', base_url: '', credit: 0, quality: 'standard', desc: '免费写实风格增强' },
+  { id: 'hf-flux-schnell', name: 'FLUX.1-schnell（Hugging Face 免费）', provider: 'hf', model: 'black-forest-labs/FLUX.1-schnell', base_url: '', credit: 0, quality: 'standard', desc: '当下最火开源 FLUX 模型，需 HF Token（免费账户有额度）' },
+  { id: 'siliconflow-flux-11', name: '硅基流动 FLUX.1（国内低价）', provider: 'openai', model: 'black-forest-labs/FLUX.1-schnell', base_url: 'https://api.siliconflow.cn/v1', credit: 3, quality: 'standard', desc: '国内 SiliconFlow 加速，价格便宜，需 API Key' },
+  { id: 'siliconflow-qvq', name: '硅基流动 QVQ-72B-Preview（国内低价）', provider: 'openai', model: 'QVQ-72B-Preview', base_url: 'https://api.siliconflow.cn/v1', credit: 3, quality: 'standard', desc: '硅基流动多模态模型，需 API Key' },
+  { id: 'doubao-seedream-5-lite', name: '豆包 Seedream 5.0 Lite', provider: 'openai', model: 'doubao-seedream-5-0-lite-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 5, quality: 'standard', desc: '豆包最新轻量版，支持 2K/3K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-5', name: '豆包 Seedream 5.0', provider: 'openai', model: 'doubao-seedream-5-0-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 8, quality: 'standard', desc: '豆包旗舰版，支持 2K/3K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-4-5', name: '豆包 Seedream 4.5', provider: 'openai', model: 'doubao-seedream-4-5-251128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 7, quality: 'standard', desc: '豆包 4.5，支持 2K/4K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-4', name: '豆包 Seedream 4.0', provider: 'openai', model: 'doubao-seedream-4-0-250828', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 6, quality: 'standard', desc: '豆包 4.0，支持 1K/2K/4K，需火山引擎 API Key' },
+  { id: 'doubao-seedream-3', name: '豆包 Seedream 3.0-t2i', provider: 'openai', model: 'doubao-seedream-3-0-t2i-250415', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 4, quality: 'standard', desc: '豆包文生图基础版，512–2048 像素，需火山引擎 API Key' },
+  { id: 'openai-dall-e-3', name: 'OpenAI DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: '', credit: 10, quality: 'hd', desc: 'OpenAI 官方，按张计费' },
+  { id: 'openai-gpt-image-1', name: 'OpenAI GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: '', credit: 12, quality: 'hd', desc: 'OpenAI 最新生图模型，按张计费' },
+  { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', credit: 5, quality: 'standard', desc: '读取系统设置→生图模型中的配置' },
 ];
 const ASPECT_RATIOS = [
   { id: 'auto', label: '自动', size: '' },
@@ -148,7 +155,16 @@ async function enterApp() {
     b.style.display = (need && !need.split(',').includes(state.user.role)) ? 'none' : '';
   });
   state.stages = await api('GET', '/stages');
+  await loadCreditBalance();
   await switchView('customers');
+}
+async function loadCreditBalance() {
+  try {
+    const d = await api('GET', '/me/credits');
+    state.creditBalance = d.balance || 0;
+    const el = $('#ubCredit');
+    if (el) el.textContent = '💎 ' + fmt0(state.creditBalance);
+  } catch (e) { /* 忽略 */ }
 }
 
 // ---------------- 初始化 ----------------
@@ -156,6 +172,7 @@ async function init() {
   $('#loginBtn').addEventListener('click', doLogin);
   $('#loginPw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   $('#logoutBtn').addEventListener('click', async () => { try { await api('POST', '/logout'); } catch {} forceLogin(); });
+  $('#ubCredit').addEventListener('click', loadCreditBalance);
   $$('#nav .nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
   $('#drawerMask').addEventListener('click', closeDrawer);
   if (state.token) {
@@ -177,6 +194,7 @@ async function switchView(v) {
   if (v === 'forms') return renderForms();
   if (v === 'stats') return renderStats();
   if (v === 'prices') return renderPrices();
+  if (v === 'credits') return renderCredits();
   if (v === 'settings') return renderSettings();
   if (v === 'users') return renderUsers();
 }
@@ -977,18 +995,19 @@ async function renderSettings() {
       </div>
       <div class="section">
         <h3>④ 生图模型（AI 效果图）</h3>
-        <div class="hint">默认 Pollinations 免费免 Key，开箱即用；如需豆包/OpenAI 等付费模型，填入对应 API Key 与 Base URL。方案设计页可临时切换模型、画面比例与画质。</div>
+        <div class="hint">平台级 API Key 由管理员统一配置，员工生图时扣积分即可，无需每个人都申请 Key。如未配置平台 Key，员工可在方案设计页临时填写自己的 Key。</div>
         <div class="pfield"><label>快速选择模型</label><select id="gPreset" class="wfull">
           <option value="">— 手动填写 —</option>
           ${IMG_MODELS.filter(m => m.id !== 'custom').map(m => `<option value="${m.id}">${m.name}</option>`).join('')}
         </select></div>
         <div class="pfield"><label>供应商</label><select id="gProvider" class="wfull">
           <option value="pollinations" ${s.img_gen_provider === 'pollinations' ? 'selected' : ''}>Pollinations（免费 · 免 Key）</option>
-          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（豆包 / 通义万相 / 智谱 / 火山等）</option>
+          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（豆包 / 通义万相 / 智谱 / 火山 / 硅基流动等）</option>
+          <option value="hf" ${s.img_gen_provider === 'hf' ? 'selected' : ''}>Hugging Face 免费推理</option>
         </select></div>
-        <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="豆包填火山引擎 API Key，OpenAI 填 OpenAI Key"></div>
-        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 doubao-seedream-5-0-260128 / gpt-image-1 / dall-e-3"></div>
-        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="豆包 https://ark.cn-beijing.volces.com/api/v3；OpenAI 留空"></div>
+        <div class="pfield"><label>平台级 API Key（全站共用）</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="豆包填火山引擎 API Key；硅基流动/智谱/通义万相填对应 Key；HF 填 Token"></div>
+        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 doubao-seedream-5-0-260128 / gpt-image-1 / black-forest-labs/FLUX.1-schnell"></div>
+        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="豆包 https://ark.cn-beijing.volces.com/api/v3；硅基 https://api.siliconflow.cn/v1；OpenAI 留空"></div>
         <div class="pfield"><label>默认尺寸</label><select id="gSize" class="wfull">
           ${['1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', '512x512', '2048x2048', '2048x1152', '1152x2048'].map(o => `<option ${s.img_gen_size === o ? 'selected' : ''}>${o}</option>`).join('')}
         </select></div>
@@ -998,6 +1017,20 @@ async function renderSettings() {
         </select></div>
         <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="gWatermark" ${s.img_gen_watermark==='1'?'checked':''}> 添加 "AI生成" 水印（仅部分模型支持，如豆包）</label></div>
         <div class="hint" style="margin-top:6px">豆包 Seedream 模型 ID 示例：doubao-seedream-5-0-260128、doubao-seedream-5-0-lite-260128、doubao-seedream-4-5-251128、doubao-seedream-4-0-250828、doubao-seedream-3-0-t2i-250415。</div>
+      </div>
+
+      <div class="section">
+        <h3>⑤ 生图积分扣费</h3>
+        <div class="hint">1 积分 = 1 分；管理员给员工充值后，员工生图时自动扣减。免费模型扣 0 分。关闭积分扣费后系统仅记录流水，不实际扣除。</div>
+        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="gCreditsEnabled" ${s.credits_enabled!=='0'?'checked':''}> 启用积分扣费</label></div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+          <div class="pfield"><label>Pollinations 单价</label><input id="gCreditPollinations" type="number" min="0" value="${esc(s.img_credit_pollinations || '0')}"></div>
+          <div class="pfield"><label>Hugging Face 单价</label><input id="gCreditHf" type="number" min="0" value="${esc(s.img_credit_hf || '0')}"></div>
+          <div class="pfield"><label>硅基流动单价</label><input id="gCreditSiliconflow" type="number" min="0" value="${esc(s.img_credit_siliconflow || '3')}"></div>
+          <div class="pfield"><label>豆包单价</label><input id="gCreditDoubao" type="number" min="0" value="${esc(s.img_credit_doubao || '5')}"></div>
+          <div class="pfield"><label>OpenAI 单价</label><input id="gCreditOpenai" type="number" min="0" value="${esc(s.img_credit_openai || '10')}"></div>
+          <div class="pfield"><label>默认单价</label><input id="gCreditDefault" type="number" min="0" value="${esc(s.img_credit_default || '5')}"></div>
+        </div>
       </div>
     </div>
     <div style="margin:14px 0 40px"><button class="btn" id="sSave">💾 保存系统设置</button></div>`;
@@ -1045,6 +1078,13 @@ async function renderSettings() {
       img_gen_size: $('#gSize').value,
       img_gen_quality: $('#gQuality').value,
       img_gen_watermark: $('#gWatermark').checked ? '1' : '0',
+      credits_enabled: $('#gCreditsEnabled').checked ? '1' : '0',
+      img_credit_pollinations: $('#gCreditPollinations').value,
+      img_credit_hf: $('#gCreditHf').value,
+      img_credit_siliconflow: $('#gCreditSiliconflow').value,
+      img_credit_doubao: $('#gCreditDoubao').value,
+      img_credit_openai: $('#gCreditOpenai').value,
+      img_credit_default: $('#gCreditDefault').value,
     };
     await api('PUT', '/settings', body);
     state.settings = null;
@@ -1191,6 +1231,8 @@ function renderSchemeEditor() {
         <div class="q-paste-actions">
           <button class="btn" id="scGen">🎨 生成效果图</button>
           <span id="scProviderTag" class="provider-tag"></span>
+          <span id="scCreditTag" class="credit-tag">本次消耗 0 积分</span>
+          <span id="scBalanceTag" class="credit-tag muted">余额 0 积分</span>
         </div>
         <div class="scheme-thumbs" id="scImgThumbs">${schemeThumbs(s.images)}</div>
         <div id="scGenMsg" class="q-warn" style="display:none"></div>
@@ -1221,6 +1263,8 @@ function renderSchemeEditor() {
   $('#scModel').addEventListener('change', onSchemeModelChange);
   $('#scAspect').addEventListener('change', updateGenSizePreview);
   $('#scQuality').addEventListener('change', onSchemeQualityChange);
+  $('#scN').addEventListener('change', updateGenCreditPreview);
+  $('#scN').addEventListener('input', updateGenCreditPreview);
   $('#scAddItem').addEventListener('click', () => { state.scheme.items.push({ category: '植物-其他', name: '', spec: '', qty: 1, unit: '项', cost_price: 0 }); renderSchemeItems(); });
   onSchemeModelChange();
   // 若已保存方案用的是自定义尺寸，回填 W×H 并展开输入框
@@ -1280,9 +1324,14 @@ function onSchemeModelChange() {
   const hint = $('#scModelHint');
   if (hint) hint.textContent = preset.desc || '';
   const tag = $('#scProviderTag');
-  if (tag) tag.textContent = preset.provider === 'pollinations' ? '免费免 Key' : (preset.provider === 'openai' ? '需 API Key' : '使用系统设置');
+  if (tag) {
+    if (preset.provider === 'pollinations') tag.textContent = '免费免 Key';
+    else if (preset.provider === 'hf') tag.textContent = '需 Hugging Face Token（免费额度）';
+    else if (preset.provider === 'openai') tag.textContent = '需 API Key';
+    else tag.textContent = '使用系统设置';
+  }
   const keyRow = $('#scKeyRow');
-  if (keyRow) keyRow.style.display = (preset.provider === 'openai') ? 'flex' : 'none';
+  if (keyRow) keyRow.style.display = (preset.provider === 'openai' || preset.provider === 'hf') ? 'flex' : 'none';
   updateGenSizePreview();
 }
 function onSchemeQualityChange() {
@@ -1290,6 +1339,15 @@ function onSchemeQualityChange() {
   const customField = $('#scCustomField');
   if (customField) customField.style.display = (quality === 'custom') ? 'flex' : 'none';
   updateGenSizePreview();
+}
+function updateGenCreditPreview() {
+  const preset = IMG_MODELS.find(m => m.id === $('#scModel').value) || IMG_MODELS[0];
+  const n = +($('#scN') ? $('#scN').value : 1) || 1;
+  const cost = (preset.credit || 0) * n;
+  const creditTag = $('#scCreditTag');
+  const balanceTag = $('#scBalanceTag');
+  if (creditTag) creditTag.textContent = cost === 0 ? '本次免费' : `本次消耗 ${cost} 积分`;
+  if (balanceTag) balanceTag.textContent = `余额 ${state.creditBalance || 0} 积分`;
 }
 function updateGenSizePreview() {
   const preset = IMG_MODELS.find(m => m.id === $('#scModel').value) || IMG_MODELS[0];
@@ -1300,6 +1358,7 @@ function updateGenSizePreview() {
   const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024', cw, ch);
   const box = $('#scSizePreview');
   if (box) box.textContent = '输出尺寸：' + size + (quality === 'custom' ? '（自定义 · 不限制）' : (aspect === 'auto' ? '（跟随系统设置）' : ''));
+  updateGenCreditPreview();
 }
 async function genSchemeImages() {
   const prompt = $('#scPrompt').value.trim();
@@ -1331,8 +1390,9 @@ async function genSchemeImages() {
     if (preset.base_url) payload.base_url = preset.base_url;
     if (size) payload.size = size;
     if (apiKey) payload.api_key = apiKey;
-    // OpenAI/DALL-E 支持 quality；豆包部分版本也支持
-    payload.quality = (quality === 'sd' ? 'standard' : 'hd');
+    // OpenAI/DALL-E 支持 standard/hd；豆包文档未明确支持 quality，传非标准值可能报错
+    if (quality === 'sd') payload.quality = 'standard';
+    else if (quality === 'hd') payload.quality = 'hd';
     const r = await api('POST', '/scheme/generate', payload);
     if (r.error) throw new Error(r.error);
     const urls = r.urls || [];
@@ -1340,6 +1400,9 @@ async function genSchemeImages() {
     state.scheme.images.push(...urls);
     $('#scImgThumbs').innerHTML = schemeThumbs(state.scheme.images);
     bindThumbRemove('image');
+    state.creditBalance = Math.max(0, (state.creditBalance || 0) - (r.cost || 0));
+    updateGenCreditPreview();
+    loadCreditBalance();
     toast('已生成 ' + urls.length + ' 张效果图（' + (r.provider || '') + ' · ' + (r.size || size) + '）');
   } catch (err) {
     msg.style.display = 'block'; msg.textContent = '⚠ ' + err.message;
@@ -1415,6 +1478,78 @@ async function deleteScheme(id) {
   const r = await api('DELETE', '/schemes/' + id);
   if (r.error) return toast(r.error);
   closeDrawer(); toast('已删除'); renderScheme();
+}
+
+// ---------------- 积分管理 ----------------
+async function renderCredits() {
+  const [users, txs, prices] = await Promise.all([api('GET', '/users'), api('GET', '/credits/transactions'), api('GET', '/credits/prices')]);
+  const app = $('#app');
+  const userMap = new Map((users || []).map(u => [u.username, u]));
+  app.innerHTML = `
+    <div class="toolbar">
+      <b style="color:var(--green-900)">积分管理</b>
+      <span class="spacer"></span>
+      <button class="btn sm" id="crRecharge">+ 充值积分</button>
+    </div>
+    <div class="section">
+      <h3>当前扣费标准</h3>
+      <div class="hint">积分扣费开关：${prices.enabled ? '已启用' : '已关闭'}</div>
+      <table class="price-table" style="max-width:560px">
+        <thead><tr><th>渠道</th><th>单张积分</th></tr></thead>
+        <tbody>
+          <tr><td>Pollinations（免费）</td><td>${prices.pollinations}</td></tr>
+          <tr><td>Hugging Face</td><td>${prices.hf}</td></tr>
+          <tr><td>硅基流动</td><td>${prices.siliconflow}</td></tr>
+          <tr><td>豆包 Seedream</td><td>${prices.doubao}</td></tr>
+          <tr><td>OpenAI</td><td>${prices.openai}</td></tr>
+          <tr><td>默认/自定义</td><td>${prices.default}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="section">
+      <h3>最近流水</h3>
+      ${txs.length ? `<table class="price-table">
+        <thead><tr><th>时间</th><th>账号</th><th>姓名</th><th>类型</th><th>积分变动</th><th>备注</th></tr></thead>
+        <tbody>
+          ${txs.map(t => `<tr>
+            <td>${esc((t.created_at||'').slice(0,19))}</td>
+            <td><b>${esc(t.username)}</b></td>
+            <td>${esc(t.name)}</td>
+            <td>${esc(t.type)}</td>
+            <td style="color:${t.amount>0?'var(--green-700)':'var(--red-600)'};font-weight:600">${t.amount>0?'+':''}${t.amount}</td>
+            <td>${esc(t.note||'—')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<div class="empty">暂无积分流水</div>'}
+    </div>`;
+  $('#crRecharge').addEventListener('click', () => openRechargeDialog(userMap, prices));
+}
+
+function openRechargeDialog(userMap, prices) {
+  openDrawer();
+  const us = [...userMap.values()];
+  $('#drawerPanel').innerHTML = `
+    <div class="dp-head"><h2>充值积分</h2><button class="close" id="dClose">×</button></div>
+    <div class="dp-body">
+      <div class="section">
+        <div class="hint">正数 = 充值；负数 = 扣减。1 积分对应系统设置里的单张扣费单位。</div>
+        <div class="field"><label>选择员工</label><select id="crUser" class="wfull">${us.map(u=>`<option value="${esc(u.username)}">${esc(u.name||u.username)}（${ROLE_NAMES[u.role]||u.role}）</option>`).join('')}</select></div>
+        <div class="field"><label>积分数量</label><input id="crAmount" type="number" class="wfull" placeholder="如 100 或 -50"></div>
+        <div class="field"><label>备注</label><input id="crNote" class="wfull" placeholder="充值说明"></div>
+        <div style="margin-top:14px"><button class="btn" id="crSave">确认充值</button></div>
+      </div>
+    </div>`;
+  $('#dClose').addEventListener('click', closeDrawer);
+  $('#crSave').addEventListener('click', async () => {
+    const username = $('#crUser').value;
+    const amount = +$('#crAmount').value;
+    const note = $('#crNote').value.trim();
+    if (!amount) return toast('请填写积分数量');
+    const r = await api('POST', '/credits/recharge', { username, amount, note });
+    if (r.error) return toast(r.error);
+    toast(`已调整 ${amount} 积分，当前余额 ${r.balance}`);
+    closeDrawer(); renderCredits();
+  });
 }
 
 init();

@@ -266,13 +266,21 @@ DEFAULT_SETTINGS = {
     "print_show_cost": "0",        # 是否在报价单上显示成本价/毛利率(0/1)
     "print_note": "本报价含植物、硬景、辅材及基础施工费用；不含土建与大型水电改造。报价有效期 15 天，以定金到账之日起算。",
     # ---- AI 生图（方案设计模块）----
-    "img_gen_provider": "pollinations",   # pollinations=免费免key / openai=OpenAI兼容(含豆包/通义万相/智谱/火山等)
-    "img_gen_api_key": "",                 # OpenAI兼容接口 Key（pollinations 留空）
+    "img_gen_provider": "pollinations",   # pollinations=免费免key / openai=OpenAI兼容(含豆包/通义万相/智谱/火山/硅基流动等)
+    "img_gen_api_key": "",                 # 平台级 API Key（全站共用）；个人也可在生成时临时填写
     "img_gen_model": "",                   # 模型名：pollinations留空；openai=gpt-image-1/dall-e-3；豆包=doubao-seedream-5-0-260128；通义万相=wanx2.1-t2i-...
-    "img_gen_base_url": "",                # OpenAI兼容基地址，留空默认 https://api.openai.com/v1（豆包填 https://ark.cn-beijing.volces.com/api/v3）
+    "img_gen_base_url": "",                # OpenAI兼容基地址，留空默认 https://api.openai.com/v1（豆包 https://ark.cn-beijing.volces.com/api/v3；硅基 https://api.siliconflow.cn/v1）
     "img_gen_size": "1024x1024",           # 生图尺寸
     "img_gen_quality": "standard",         # 画质：standard/hd（OpenAI/DALL-E 用；豆包主要用尺寸控制）
     "img_gen_watermark": "0",              # 是否添加水印（豆包支持；1=添加，0=不添加）
+    # ---- 生图积分扣费（1积分=1分；负数表示扣费）----
+    "img_credit_pollinations": "0",        # Pollinations 免费渠道
+    "img_credit_hf": "0",                  # Hugging Face 免费推理（有限额）
+    "img_credit_siliconflow": "3",         # 硅基流动等国内低价渠道
+    "img_credit_doubao": "5",              # 豆包 Seedream
+    "img_credit_openai": "10",             # OpenAI DALL-E / GPT-Image
+    "img_credit_default": "5",             # 未知/自定义模型默认单价
+    "credits_enabled": "1",                # 是否启用积分扣费（0=关闭，仅记录不扣费）
 }
 
 # ---------------------------------------------------------------------------
@@ -465,6 +473,23 @@ def init_db():
         created_at TEXT,
         updated_at TEXT
     )""")
+    # 积分账户与流水
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS credits (
+        user_id INTEGER PRIMARY KEY,
+        balance INTEGER DEFAULT 0
+    )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount INTEGER,
+        type TEXT,
+        ref_type TEXT,
+        ref_id INTEGER,
+        note TEXT,
+        created_at TEXT
+    )""")
     conn.commit()
     # 上传目录（现场照片 / AI 效果图）
     os.makedirs(os.path.join(WEB_DIR, "uploads", "schemes"), exist_ok=True)
@@ -560,6 +585,25 @@ def _migrate_schema(conn):
     add_col("quotes", "margin", "REAL", 0)
     add_col("quotes", "payment_method", "TEXT", "")
     add_col("schemes", "gen_config", "TEXT", "{}")
+    # 积分系统（表级迁移）
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS credits (
+        user_id INTEGER PRIMARY KEY,
+        balance INTEGER DEFAULT 0
+    )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount INTEGER,
+        type TEXT,
+        ref_type TEXT,
+        ref_id INTEGER,
+        note TEXT,
+        created_at TEXT
+    )""")
+    conn.commit()
 
 
 def now_str():
@@ -1027,6 +1071,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/me":
             return self._json({"user": {k: u[k] for k in ("username", "name", "role")}})
+        if path == "/api/me/credits":
+            return self._json({"balance": self._credit_balance(u["username"])})
+        if path == "/api/credits/prices":
+            return self._json(self._credit_prices())
+        if path == "/api/credits/transactions":
+            return self._json(self._credit_transactions(u))
         if path == "/api/stages":
             return self._json(STAGES)
         if path == "/api/customers":
@@ -1136,6 +1186,12 @@ class Handler(BaseHTTPRequestHandler):
                 if u["role"] not in ("admin", "manager"):
                     return self._json({"error": "无权限"}, 403)
                 return self._json(self._delete_contact(int(parts[3])))
+
+        # 积分充值（管理员/店长）
+        if path == "/api/credits/recharge" and method == "POST":
+            if u["role"] not in ("admin", "manager"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._credit_recharge(body, u))
 
         # 员工账号（管理员）
         if path == "/api/users" and method == "POST":
@@ -1420,6 +1476,108 @@ class Handler(BaseHTTPRequestHandler):
         conn.close()
         return get_settings()
 
+    # ---- 积分系统 ----
+    def _credit_prices(self):
+        s = get_settings()
+        return {
+            "pollinations": int(s.get("img_credit_pollinations") or 0),
+            "hf": int(s.get("img_credit_hf") or 0),
+            "siliconflow": int(s.get("img_credit_siliconflow") or 3),
+            "doubao": int(s.get("img_credit_doubao") or 5),
+            "openai": int(s.get("img_credit_openai") or 10),
+            "default": int(s.get("img_credit_default") or 5),
+            "enabled": (s.get("credits_enabled") or "1") == "1",
+        }
+
+    def _credit_price_for(self, provider, model):
+        s = get_settings()
+        prices = self._credit_prices()
+        provider = (provider or "").lower()
+        model = (model or "").lower()
+        if provider == "pollinations":
+            return prices["pollinations"]
+        if provider == "hf" or "huggingface" in model or "flux.1-schnell" in model:
+            return prices["hf"]
+        if "siliconflow" in provider or "siliconflow" in model:
+            return prices["siliconflow"]
+        if "doubao" in model or "seedream" in model:
+            return prices["doubao"]
+        if "openai" in provider or model in ("dall-e-3", "gpt-image-1"):
+            return prices["openai"]
+        return prices["default"]
+
+    def _credit_balance(self, username):
+        conn = get_db()
+        r = conn.execute("SELECT balance FROM credits JOIN users ON credits.user_id=users.id WHERE users.username=?", (username,)).fetchone()
+        conn.close()
+        return r["balance"] if r else 0
+
+    def _credit_change(self, username, amount, tx_type, ref_type=None, ref_id=None, note=""):
+        """修改积分余额并记录流水；amount 正为充值/退款，负为消费。"""
+        conn = get_db()
+        r = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "用户不存在"}
+        uid = r["id"]
+        try:
+            conn.execute("INSERT INTO credits (user_id, balance) VALUES (?, 0) ON CONFLICT(user_id) DO UPDATE SET balance=credits.balance",
+                         (uid,))
+            conn.execute("UPDATE credits SET balance = balance + ? WHERE user_id=?", (amount, uid))
+            conn.execute("INSERT INTO credit_transactions (user_id, amount, type, ref_type, ref_id, note, created_at) VALUES (?,?,?,?,?,?,?)",
+                         (uid, amount, tx_type, ref_type, ref_id, note, now_str()))
+            conn.commit()
+            bal = conn.execute("SELECT balance FROM credits WHERE user_id=?", (uid,)).fetchone()["balance"]
+        finally:
+            conn.close()
+        return {"ok": True, "balance": bal}
+
+    def _credit_consume(self, username, provider, model, n, ref_type=None, ref_id=None):
+        s = get_settings()
+        if (s.get("credits_enabled") or "1") != "1":
+            return {"ok": True, "cost": 0, "balance": self._credit_balance(username)}
+        price = self._credit_price_for(provider, model)
+        cost = price * max(1, int(n or 1))
+        bal = self._credit_balance(username)
+        if bal < cost:
+            return {"error": f"积分不足：本次需 {cost} 积分，当前余额 {bal}。请联系管理员充值。"}
+        res = self._credit_change(username, -cost, "consume", ref_type, ref_id,
+                                  f"生图 {provider}/{model} x{n}，-{cost} 积分")
+        res["cost"] = cost
+        return res
+
+    def _credit_refund(self, username, cost, ref_type=None, ref_id=None):
+        if cost <= 0:
+            return {"ok": True}
+        return self._credit_change(username, cost, "refund", ref_type, ref_id, f"生图失败退款 +{cost} 积分")
+
+    def _credit_recharge(self, body, u):
+        username = (body.get("username") or "").strip()
+        try:
+            amount = int(body.get("amount") or 0)
+        except Exception:
+            return {"error": "积分数量必须是整数"}
+        note = (body.get("note") or "").strip() or f"管理员 {u['name']} 充值"
+        if not username or amount == 0:
+            return {"error": "用户名和积分数量必填"}
+        return self._credit_change(username, amount, "recharge", note=note)
+
+    def _credit_transactions(self, u):
+        conn = get_db()
+        if u["role"] in ("admin", "manager"):
+            rows = conn.execute("""
+                SELECT t.*, u.username, u.name FROM credit_transactions t
+                JOIN users u ON t.user_id=u.id ORDER BY t.id DESC LIMIT 200
+            """).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT t.*, u.username, u.name FROM credit_transactions t
+                JOIN users u ON t.user_id=u.id WHERE u.username=?
+                ORDER BY t.id DESC LIMIT 100
+            """, (u["username"],)).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
     # ---- 员工账号 ----
     def _list_users(self):
         conn = get_db()
@@ -1673,14 +1831,22 @@ class Handler(BaseHTTPRequestHandler):
         watermark = str(body.get("watermark", s.get("img_gen_watermark") or "0")).strip()
         model = (body.get("model") or s.get("img_gen_model") or "").strip()
         base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
+        # 平台级 Key（系统设置）优先；个人临时 Key 次之
         api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
         try:
             w, h = size.lower().split("x")
             w, h = int(w), int(h)
         except Exception:
             w, h = 1024, 1024
-        # 把本次生图配置持久化到方案（方便下次复用）
         scheme_id = body.get("scheme_id")
+
+        # 计算并扣除积分（失败会回滚）
+        cost_res = self._credit_consume(u["username"], provider, model, n, "scheme_generate", scheme_id)
+        if cost_res.get("error"):
+            return cost_res
+        cost = cost_res.get("cost", 0)
+
+        # 把本次生图配置持久化到方案（方便下次复用）
         if scheme_id and str(scheme_id).isdigit():
             gen_config = {
                 "provider": provider, "model": model, "base_url": base_url,
@@ -1696,19 +1862,45 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if provider == "pollinations":
                 urls = self._gen_pollinations(prompt, w, h, n, cfg)
+            elif provider == "hf":
+                urls = self._gen_hf(prompt, w, h, n, cfg)
             else:
                 urls = self._gen_openai(s, prompt, w, h, n, cfg)
+        except urllib.error.HTTPError as he:
+            # 生图失败，回滚积分
+            self._credit_refund(u["username"], cost, "scheme_generate", scheme_id)
+            detail = ""
+            try:
+                detail = he.read().decode("utf-8", "ignore")[:400]
+            except Exception:
+                pass
+            msg = f"HTTP {he.code}"
+            if he.code == 401:
+                msg += "：API Key 无效或未授权（请检查 Key 是否正确、是否已开通该模型、或 Key 是否已被禁用）"
+            elif he.code == 403:
+                msg += "：没有权限调用该模型，请在控制台确认已开通并授权"
+            elif he.code == 429:
+                msg += "：请求过于频繁或余额不足"
+            elif he.code >= 500:
+                msg += "：模型服务暂时不可用，请稍后重试"
+            if detail:
+                msg += f"；详情：{detail}"
+            return {"error": "生图失败：" + msg}
         except Exception as e:
+            self._credit_refund(u["username"], cost, "scheme_generate", scheme_id)
             return {"error": "生图失败：" + str(e)}
         if not urls:
+            self._credit_refund(u["username"], cost, "scheme_generate", scheme_id)
             return {"error": "生图失败：未获取到图片，请检查 API Key / 网络 / 模型名"}
-        return {"urls": urls, "url": urls[0], "provider": provider, "model": model, "size": size, "quality": quality}
+        return {"urls": urls, "url": urls[0], "provider": provider, "model": model,
+                "size": size, "quality": quality, "cost": cost}
 
     def _gen_pollinations(self, prompt, w, h, n, cfg=None):
         cfg = cfg or {}
         enc = urllib.parse.quote(prompt, safe="")
         out = []
         model = cfg.get("model") or "flux"
+        # 部分 Pollinations 模型对尺寸敏感，超出范围会自动截断
         for _ in range(n):
             seed = secrets.randbelow(10 ** 9)
             url = ("https://image.pollinations.ai/prompt/%s?width=%d&height=%d&seed=%d&model=%s&nologo=true"
@@ -1719,6 +1911,30 @@ class Handler(BaseHTTPRequestHandler):
             if not raw or len(raw) < 200:
                 raise Exception("Pollinations 返回空图片")
             name = secrets.token_hex(12) + ".jpg"
+            with open(os.path.join(self._upload_dir(), name), "wb") as f:
+                f.write(raw)
+            out.append("/uploads/schemes/" + name)
+        return out
+
+    def _gen_hf(self, prompt, w, h, n, cfg=None):
+        """Hugging Face 免费推理（需要 HF Token；免费账户有 rate limit）。"""
+        cfg = cfg or {}
+        key = (cfg.get("api_key") or "").strip()
+        if not key:
+            raise Exception("Hugging Face 模型需要 API Token（可在系统设置或生成时填写）")
+        model = cfg.get("model") or "black-forest-labs/FLUX.1-schnell"
+        url = f"https://router.huggingface.co/hf-inference/models/{model}"
+        out = []
+        headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+        for _ in range(n):
+            payload = {"inputs": prompt, "parameters": {"width": w, "height": h}}
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                raw = resp.read()
+            if not raw or len(raw) < 200:
+                raise Exception("Hugging Face 返回空图片")
+            ext = ".png" if raw[:8].startswith(b"\x89PNG\r\n\x1a\n") else ".jpg"
+            name = secrets.token_hex(12) + ext
             with open(os.path.join(self._upload_dir(), name), "wb") as f:
                 f.write(raw)
             out.append("/uploads/schemes/" + name)
@@ -1735,8 +1951,8 @@ class Handler(BaseHTTPRequestHandler):
         watermark = str(cfg.get("watermark", s.get("img_gen_watermark") or "0")).strip()
         size = cfg.get("size") or s.get("img_gen_size") or "%dx%d" % (w, h)
         payload = {"model": model, "prompt": prompt, "n": n, "size": size, "response_format": "b64_json"}
-        # OpenAI/DALL-E 支持 quality；豆包 Seedream 部分版本支持，传了不会错
-        if quality in ("standard", "hd"):
+        # OpenAI/DALL-E 支持 quality；豆包 Seedream 文档未明确支持 quality，避免传非标准值
+        if quality in ("standard", "hd") and "doubao" not in model.lower():
             payload["quality"] = quality
         # 豆包支持 watermark 参数：false 去掉 "AI生成" 水印
         if watermark in ("1", "true", "True"):

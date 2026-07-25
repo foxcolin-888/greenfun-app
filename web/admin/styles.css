@@ -164,6 +164,7 @@ button{font-family:inherit;cursor:pointer}
 .ub-info{display:flex;flex-direction:column;align-items:flex-end;line-height:1.25}
 .ub-name{font-size:14px;font-weight:700;color:#fff}
 .ub-role{font-size:11px;color:#d6f0e0;background:rgba(255,255,255,.15);padding:2px 9px;border-radius:20px}
+.ub-credit{font-size:12px;color:#fff;background:linear-gradient(90deg,#f59e0b,#d97706);padding:2px 10px;border-radius:20px;cursor:pointer;margin-top:3px;font-weight:600}
 
 /* 通用小表 / 提示 */
 .mini-table{width:100%;border-collapse:collapse;font-size:12px}
@@ -258,6 +259,8 @@ button{font-family:inherit;cursor:pointer}
 .gen-custom-size>span{color:var(--muted);font-size:15px}
 .gen-unit{font-size:12px;color:var(--muted)}
 .provider-tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:var(--green-100);color:var(--green-900);margin-left:8px}
+.credit-tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#fff7ed;color:#b45309;margin-left:8px;border:1px solid #fed7aa}
+.credit-tag.muted{background:#f3f4f6;color:#6b7280;border-color:#e5e7eb}
 .btn.danger{background:var(--red-600,#c0392b);color:#fff;border-color:var(--red-600,#c0392b)}
 .btn.danger:hover{filter:brightness(.94)}
 .q-del{border:0;background:transparent;color:var(--muted);font-size:17px;cursor:pointer;line-height:1}
