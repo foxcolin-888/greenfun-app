@@ -45,6 +45,13 @@ const IMG_MODELS = [
   { id: 'doubao-seedream-3', name: '豆包 Seedream 3.0-t2i', provider: 'openai', model: 'doubao-seedream-3-0-t2i-250415', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 4, quality: 'standard', desc: '豆包文生图基础版，512–2048 像素，需火山引擎 API Key' },
   { id: 'openai-dall-e-3', name: 'OpenAI DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: '', credit: 10, quality: 'hd', desc: 'OpenAI 官方，按张计费' },
   { id: 'openai-gpt-image-1', name: 'OpenAI GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: '', credit: 12, quality: 'hd', desc: 'OpenAI 最新生图模型，按张计费' },
+  // —— APIYI 聚合网关（OpenAI 兼容，平台 Key 由系统设置统一配置）——
+  { id: 'apiyi-seedream-5', name: 'APIYI · 豆包 Seedream 5.0', provider: 'openai', model: 'seedream-5-0-260128', base_url: 'https://api.apiyi.com/v1', credit: 5, quality: 'standard', desc: 'APIYI 聚合 · 豆包 Seedream 5.0，需 APIYI 平台 Key' },
+  { id: 'apiyi-dall-e-3', name: 'APIYI · DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: 'https://api.apiyi.com/v1', credit: 10, quality: 'hd', desc: 'APIYI 聚合 · OpenAI DALL·E 3，需 APIYI 平台 Key' },
+  { id: 'apiyi-gpt-image-1', name: 'APIYI · GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: 'https://api.apiyi.com/v1', credit: 12, quality: 'hd', desc: 'APIYI 聚合 · OpenAI GPT-Image-1，需 APIYI 平台 Key' },
+  { id: 'apiyi-flux-pro', name: 'APIYI · FLUX Pro', provider: 'openai', model: 'flux-pro', base_url: 'https://api.apiyi.com/v1', credit: 6, quality: 'standard', desc: 'APIYI 聚合 · FLUX Pro 写实，需 APIYI 平台 Key' },
+  { id: 'apiyi-nano-banana', name: 'APIYI · NanoBanana Pro', provider: 'openai', model: 'nano-banana-pro', base_url: 'https://api.apiyi.com/v1', credit: 4, quality: 'standard', desc: 'APIYI 聚合 · NanoBanana 高性价比，需 APIYI 平台 Key' },
+  { id: 'apiyi-gemini-image', name: 'APIYI · Gemini 生图', provider: 'openai', model: 'gemini-2.5-flash-image', base_url: 'https://api.apiyi.com/v1', credit: 5, quality: 'standard', desc: 'APIYI 聚合 · Gemini 图像生成，需 APIYI 平台 Key' },
   { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', credit: 5, quality: 'standard', desc: '读取系统设置→生图模型中的配置' },
 ];
 const ASPECT_RATIOS = [
@@ -81,16 +88,30 @@ function fmt0(n) { return (n || 0).toLocaleString('zh-CN'); }
 
 // 根据模型预设 + 画面比例 + 画质 计算最终 size 字符串
 // customW/customH 仅当 qualityId==='custom' 时生效，可填任意像素（后端不截断 → 不限制）
+// 部分模型有最小尺寸限制（如豆包 Seedream 5.0 要求短边≥1920），低于下限时按比例放大
 function computeGenSize(modelId, aspectId, qualityId, fallbackSize, customW, customH) {
+  let w, h;
   if (qualityId === 'custom') {
-    const w = (customW && +customW > 0) ? Math.round(+customW) : 4096;
-    const h = (customH && +customH > 0) ? Math.round(+customH) : 4096;
-    return w + 'x' + h;
+    w = (customW && +customW > 0) ? Math.round(+customW) : 4096;
+    h = (customH && +customH > 0) ? Math.round(+customH) : 4096;
+  } else if (aspectId === 'auto') {
+    [w, h] = (fallbackSize || '1024x1024').split('x').map(Number);
+  } else {
+    const map = QUALITY_SIZES[aspectId];
+    const s = (map && map[qualityId]) || (map && map.sd) || fallbackSize || '1024x1024';
+    [w, h] = s.split('x').map(Number);
   }
-  if (aspectId === 'auto') return fallbackSize || '1024x1024';
-  const map = QUALITY_SIZES[aspectId];
-  if (!map) return fallbackSize || '1024x1024';
-  return map[qualityId] || map.sd || fallbackSize || '1024x1024';
+  const isSeedream = /seedream/i.test(modelId || '');
+  const minShort = isSeedream ? 1920 : 0;
+  if (minShort > 0) {
+    const shortSide = Math.min(w, h);
+    if (shortSide > 0 && shortSide < minShort) {
+      const scale = minShort / shortSide;
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+    }
+  }
+  return w + 'x' + h;
 }
 // 根据设置值反推当前选中的预设
 function findImgModelPreset(cfg) {
