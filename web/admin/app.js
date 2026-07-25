@@ -1038,6 +1038,7 @@ async function renderSettings() {
           <option value="hd" ${s.img_gen_quality === 'hd' ? 'selected' : ''}>hd（高清）</option>
         </select></div>
         <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="gWatermark" ${s.img_gen_watermark==='1'?'checked':''}> 添加 "AI生成" 水印（仅部分模型支持，如豆包）</label></div>
+        <div class="pfield"><label>AI 分析模型（多模态）</label><input id="gAnalysisModel" class="wfull" value="${esc(s.img_analysis_model || 'gpt-4o-mini')}" placeholder="如 gpt-4o-mini / qwen-vl-max / gpt-4o，用于根据效果图生成设计理念与识别物料清单"></div>
         <div class="hint" style="margin-top:6px">豆包 Seedream 模型 ID 示例：doubao-seedream-5-0-260128、doubao-seedream-5-0-lite-260128、doubao-seedream-4-5-251128、doubao-seedream-4-0-250828、doubao-seedream-3-0-t2i-250415。</div>
       </div>
 
@@ -1100,6 +1101,7 @@ async function renderSettings() {
       img_gen_size: $('#gSize').value,
       img_gen_quality: $('#gQuality').value,
       img_gen_watermark: $('#gWatermark').checked ? '1' : '0',
+      img_analysis_model: $('#gAnalysisModel').value,
       credits_enabled: $('#gCreditsEnabled').checked ? '1' : '0',
       img_credit_pollinations: $('#gCreditPollinations').value,
       img_credit_hf: $('#gCreditHf').value,
@@ -1213,6 +1215,10 @@ function renderSchemeEditor() {
         <h3>③ AI 生成效果图</h3>
         <div class="hint">选择模型、画面比例与画质后直接生成，画质可选至 4K，也可选「自定义 (不限制)」填任意宽×高。默认 Pollinations 免费免 Key、开箱即用；豆包 / OpenAI / 硅基流动等付费模型由管理员在「系统设置 → 生图模型」统一配置平台 API Key，员工无需填写任何 Key。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
+        <div class="check-row" style="margin:10px 0">
+          <label><input type="checkbox" id="scRefPhoto" ${s.photos.length ? 'checked' : ''} ${s.photos.length ? '' : 'disabled'}> 以现场照片为参考图（图生图 / 垫图）</label>
+        </div>
+        <div class="hint">勾选后，系统将自动把第一张现场照片作为垫图传给生图模型，让 AI 在真实场景基础上生成改造效果图。</div>
 
         <div class="gen-control-bar">
           <div class="gen-field">
@@ -1255,11 +1261,19 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>④ 设计理念</h3>
+        <div class="q-paste-actions" style="margin-bottom:8px">
+          <button class="btn sm ghost" id="scAnalyzeConcept" ${s.images.length ? '' : 'disabled'}>🤖 根据效果图生成</button>
+          <span class="hint" style="margin:0">基于最新一张效果图 AI 分析设计理念，可二次编辑</span>
+        </div>
         <textarea id="scConcept" class="scheme-concept" placeholder="设计思路、植物选择逻辑、色彩与层次、养护要点...">${esc(s.concept)}</textarea>
       </div>
 
       <div class="section">
         <h3>⑤ 植物与物料清单</h3>
+        <div class="q-paste-actions" style="margin-bottom:8px">
+          <button class="btn sm ghost" id="scAnalyzeItems" ${s.images.length ? '' : 'disabled'}>🤖 根据效果图识别清单</button>
+          <span class="hint" style="margin:0">基于最新一张效果图 AI 自动识别植物与物料，生成后仍可手动编辑</span>
+        </div>
         <div id="scItems"></div>
         <button class="btn sm ghost" id="scAddItem" style="margin-top:8px">＋ 添加一行</button>
       </div>
@@ -1280,6 +1294,8 @@ function renderSchemeEditor() {
   $('#scQuality').addEventListener('change', onSchemeQualityChange);
   $('#scN').addEventListener('change', updateGenCreditPreview);
   $('#scN').addEventListener('input', updateGenCreditPreview);
+  const acBtn = $('#scAnalyzeConcept'); if (acBtn) acBtn.addEventListener('click', () => analyzeSchemeImage('concept'));
+  const aiBtn = $('#scAnalyzeItems'); if (aiBtn) aiBtn.addEventListener('click', () => analyzeSchemeImage('items'));
   $('#scAddItem').addEventListener('click', () => { state.scheme.items.push({ category: '植物-其他', name: '', spec: '', qty: 1, unit: '项', cost_price: 0 }); renderSchemeItems(); });
   onSchemeModelChange();
   // 若已保存方案用的是自定义尺寸，回填 W×H 并展开输入框
@@ -1302,12 +1318,20 @@ function renderSchemeEditor() {
 
 function schemeThumbs(arr) {
   if (!arr.length) return '<div class="empty" style="padding:14px">（暂无）</div>';
-  return arr.map((u, i) => `<div class="thumb"><img src="${esc(u)}"><button class="x" data-rm="${i}">×</button></div>`).join('');
+  return arr.map((u, i) => `<div class="thumb"><img src="${esc(u)}" data-full="${esc(u)}"><button class="x" data-rm="${i}">×</button></div>`).join('');
 }
 function bindThumbRemove(kind) {
   const arr = kind === 'photo' ? state.scheme.photos : state.scheme.images;
   const sel = kind === 'photo' ? '#scPhotoThumbs' : '#scImgThumbs';
   $$(sel + ' .x').forEach(b => b.addEventListener('click', () => { arr.splice(+b.dataset.rm, 1); $(sel).innerHTML = schemeThumbs(arr); bindThumbRemove(kind); }));
+  $$(sel + ' img').forEach(img => img.addEventListener('click', () => openLightbox(img.dataset.full || img.src)));
+}
+function openLightbox(src) {
+  const box = document.createElement('div');
+  box.className = 'img-lightbox';
+  box.innerHTML = `<img src="${esc(src)}" alt="预览">`;
+  box.addEventListener('click', () => box.remove());
+  document.body.appendChild(box);
 }
 function readFileAsDataURL(file) {
   return new Promise((res, rej) => {
@@ -1400,6 +1424,11 @@ async function genSchemeImages() {
     if (preset.model) payload.model = preset.model;
     if (preset.base_url) payload.base_url = preset.base_url;
     if (size) payload.size = size;
+    // 图生图 / 垫图：用第一张现场照片
+    const useRefPhoto = $('#scRefPhoto') ? $('#scRefPhoto').checked : false;
+    if (useRefPhoto && state.scheme.photos.length) {
+      payload.reference_image = location.origin + state.scheme.photos[0];
+    }
     // OpenAI/DALL-E 支持 standard/hd；豆包文档未明确支持 quality，传非标准值可能报错
     if (quality === 'sd') payload.quality = 'standard';
     else if (quality === 'hd') payload.quality = 'hd';
@@ -1418,6 +1447,35 @@ async function genSchemeImages() {
     msg.style.display = 'block'; msg.textContent = '⚠ ' + err.message;
   } finally {
     btn.disabled = false; btn.textContent = '🎨 生成效果图';
+  }
+}
+async function analyzeSchemeImage(task) {
+  const s = state.scheme;
+  if (!s.images.length) return toast('请先生成效果图');
+  const imageUrl = location.origin + s.images[s.images.length - 1];
+  const btn = task === 'concept' ? $('#scAnalyzeConcept') : $('#scAnalyzeItems');
+  const originalText = btn.textContent;
+  btn.disabled = true; btn.textContent = '分析中…';
+  try {
+    const r = await api('POST', '/scheme/analyze', { image_url: imageUrl, task, scheme_id: s.id });
+    if (r.error) throw new Error(r.error);
+    if (task === 'concept') {
+      $('#scConcept').value = r.text || '';
+      s.concept = r.text || '';
+      toast('设计理念已生成');
+    } else {
+      if (r.items && r.items.length) {
+        s.items.push(...r.items);
+        renderSchemeItems();
+        toast('已识别 ' + r.items.length + ' 项物料');
+      } else {
+        toast('未识别到清单，请手动添加');
+      }
+    }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = originalText;
   }
 }
 function renderSchemeItems() {

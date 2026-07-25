@@ -273,6 +273,8 @@ DEFAULT_SETTINGS = {
     "img_gen_size": "1024x1024",           # 生图尺寸
     "img_gen_quality": "standard",         # 画质：standard/hd（OpenAI/DALL-E 用；豆包主要用尺寸控制）
     "img_gen_watermark": "0",              # 是否添加水印（豆包支持；1=添加，0=不添加）
+    # ---- AI 图像分析（根据效果图生成设计理念 / 识别物料清单）----
+    "img_analysis_model": "gpt-4o-mini",   # 多模态模型名，复用 img_gen_api_key / img_gen_base_url（如 APIYI 的 gpt-4o-mini / qwen-vl-max）
     # ---- 生图积分扣费（1积分=1分；负数表示扣费）----
     "img_credit_pollinations": "0",        # Pollinations 免费渠道
     "img_credit_hf": "0",                  # Hugging Face 免费推理（有限额）
@@ -1234,6 +1236,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._scheme_upload(body), 201)
         if path == "/api/scheme/generate" and method == "POST":
             return self._json(self._scheme_generate(body, u))
+        if path == "/api/scheme/analyze" and method == "POST":
+            return self._json(self._scheme_analyze(body, u))
         if path == "/api/schemes" and method == "POST":
             return self._json(self._create_scheme(body, u), 201)
         if path.startswith("/api/schemes/"):
@@ -1861,8 +1865,11 @@ class Handler(BaseHTTPRequestHandler):
                          (json.dumps(gen_config, ensure_ascii=False), int(scheme_id)))
             conn.commit()
             conn.close()
+        # 图生图 / 垫图参考（前端传第一张现场照片 URL）
+        reference_image = (body.get("reference_image") or "").strip()
         cfg = {"provider": provider, "model": model, "base_url": base_url,
-               "api_key": api_key, "size": size, "quality": quality, "watermark": watermark}
+               "api_key": api_key, "size": size, "quality": quality, "watermark": watermark,
+               "reference_image": reference_image}
         try:
             if provider == "pollinations":
                 urls = self._gen_pollinations(prompt, w, h, n, cfg)
@@ -1921,6 +1928,118 @@ class Handler(BaseHTTPRequestHandler):
         return {"urls": urls, "url": urls[0], "provider": provider, "model": model,
                 "size": size, "quality": quality, "cost": cost}
 
+    def _scheme_analyze(self, body, u):
+        image_url = (body.get("image_url") or "").strip()
+        task = (body.get("task") or "").strip()  # concept / items
+        scheme_id = body.get("scheme_id")
+        if task not in ("concept", "items"):
+            return {"error": "task 参数错误，应为 concept 或 items"}
+        s = get_settings()
+        api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
+        base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
+        model = (body.get("model") or s.get("img_analysis_model") or s.get("img_gen_model") or "").strip()
+        if not model:
+            model = "gpt-4o-mini"
+        if not api_key:
+            return {"error": "未配置 API Key（请在系统设置 → 生图模型填写平台级 Key）"}
+        if not image_url:
+            return {"error": "请选择要分析的效果图"}
+        try:
+            text = self._analyze_image(image_url, task, api_key, base_url, model)
+        except urllib.error.HTTPError as he:
+            detail = ""
+            try:
+                detail = he.read().decode("utf-8", "ignore")[:400]
+            except Exception:
+                pass
+            msg = f"HTTP {he.code}"
+            try:
+                _j = json.loads(detail)
+                if isinstance(_j, dict) and isinstance(_j.get("error"), dict) and _j["error"].get("message"):
+                    detail = _j["error"]["message"]
+                elif isinstance(_j, dict) and _j.get("message"):
+                    detail = _j["message"]
+            except Exception:
+                pass
+            return {"error": f"分析失败：{msg}；上游：{detail[:200]}"}
+        except Exception as e:
+            return {"error": "分析失败：" + str(e)}
+        if task == "items":
+            items = []
+            try:
+                items = json.loads(text)
+            except Exception:
+                m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+                if m:
+                    try:
+                        items = json.loads(m.group(1))
+                    except Exception:
+                        pass
+            out = []
+            if isinstance(items, list):
+                for it in items:
+                    if isinstance(it, dict):
+                        out.append({
+                            "category": str(it.get("category", "植物-其他")),
+                            "name": str(it.get("name", "")),
+                            "spec": str(it.get("spec", "")),
+                            "qty": to_float(it.get("qty", 1)),
+                            "unit": str(it.get("unit", "项")),
+                            "cost_price": to_float(it.get("cost_price", 0))
+                        })
+            return {"text": text, "items": out, "task": task}
+        return {"text": text, "task": task}
+
+    def _analyze_image(self, image_url, task, api_key, base_url, model):
+        # 读取图片为 base64 data URL（多模态 API 通用）
+        if image_url.startswith("/uploads/"):
+            path = os.path.join(WEB_DIR, image_url.lstrip("/"))
+            ext = os.path.splitext(path)[1].lower()
+            mime = "image/png" if ext == ".png" else "image/jpeg"
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            image_data = f"data:{mime};base64,{b64}"
+        elif image_url.startswith("http"):
+            req = urllib.request.Request(image_url, headers={"User-Agent": "greenfun/1.0"})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                ct = r.headers.get("Content-Type", "image/jpeg")
+                raw = r.read()
+            b64 = base64.b64encode(raw).decode("utf-8")
+            mime = ct.split(";")[0].strip() if ct else "image/jpeg"
+            image_data = f"data:{mime};base64,{b64}"
+        else:
+            image_data = image_url
+        if task == "concept":
+            prompt = ("你是一位专业的室内绿植软装设计师。请根据这张阳台/室内植物花园效果图，写一段设计方案理念。"
+                      "要求：1）说明整体设计思路；2）植物选择逻辑与层次搭配；3）色彩与材质风格；4）日常养护要点。"
+                      "字数控制在 200-300 字，语言专业且有感染力。")
+        else:
+            prompt = ("你是一位专业的室内绿植软装设计师与预算师。请分析这张阳台/室内植物花园效果图，列出实现该方案所需的植物与物料清单。"
+                      "请输出 JSON 数组，每个元素包含字段：category（类别，如植物-乔木/植物-灌木/植物-草本/植物-藤本/硬景/辅材/容器/水电）、"
+                      "name（名称）、spec（规格描述）、qty（数量，数字）、unit（单位）、cost_price（估算成本单价，数字，单位元）。"
+                      "只输出 JSON 数组，不要有任何额外解释、Markdown 说明或代码块标记。")
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": image_data}},
+                    {"type": "text", "text": prompt}
+                ]}
+            ],
+            "max_tokens": 2000
+        }
+        base = base_url.strip() or "https://api.openai.com/v1"
+        req = urllib.request.Request(
+            base.rstrip("/") + "/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + api_key})
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+        text = d.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not text:
+            raise Exception("上游返回空内容")
+        return text
+
     def _gen_pollinations(self, prompt, w, h, n, cfg=None):
         cfg = cfg or {}
         enc = urllib.parse.quote(prompt, safe="")
@@ -1931,6 +2050,9 @@ class Handler(BaseHTTPRequestHandler):
             seed = secrets.randbelow(10 ** 9)
             url = ("https://image.pollinations.ai/prompt/%s?width=%d&height=%d&seed=%d&model=%s&nologo=true"
                    % (enc, w, h, seed, urllib.parse.quote(model, safe="")))
+            reference_image = cfg.get("reference_image")
+            if reference_image and reference_image.startswith("http"):
+                url += "&image=" + urllib.parse.quote(reference_image, safe="")
             req = urllib.request.Request(url, headers={"User-Agent": "greenfun/1.0"})
             with urllib.request.urlopen(req, timeout=90) as resp:
                 raw = resp.read()
@@ -1986,6 +2108,26 @@ class Handler(BaseHTTPRequestHandler):
             payload["watermark"] = True
         elif watermark in ("0", "false", "False"):
             payload["watermark"] = False
+        # 图生图 / 垫图：优先用本地上传的图片（/uploads/...）
+        reference_image = cfg.get("reference_image")
+        if reference_image:
+            img_url = reference_image
+            if not img_url.startswith("http") and img_url.startswith("/uploads/"):
+                try:
+                    path = os.path.join(WEB_DIR, img_url.lstrip("/"))
+                    ext = os.path.splitext(path)[1].lower()
+                    mime = "image/png" if ext == ".png" else "image/jpeg"
+                    with open(path, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                    img_url = f"data:{mime};base64,{b64}"
+                except Exception:
+                    img_url = reference_image
+            if img_url:
+                # 豆包 Seedream 系列通常用 image_url；gpt-image-1 用 image
+                if "seedream" in model.lower():
+                    payload["image_url"] = img_url
+                else:
+                    payload["image"] = img_url
         req = urllib.request.Request(
             base.rstrip("/") + "/images/generations",
             data=json.dumps(payload).encode("utf-8"),
