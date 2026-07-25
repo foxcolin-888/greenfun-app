@@ -60,7 +60,7 @@ const QUALITY_SIZES = {
   '3:2': { sd: '1024x683', hd: '1536x1024', '2k': '2048x1365', '4k': '4096x2731' },
   '2:3': { sd: '683x1024', hd: '1024x1536', '2k': '1365x2048', '4k': '2731x4096' },
 };
-const QUALITY_LABELS = { sd: '标清', hd: '高清', '2k': '2K', '4k': '4K' };
+const QUALITY_LABELS = { sd: '标清', hd: '高清', '2k': '2K', '4k': '4K', custom: '自定义 (不限制)' };
 
 function esc(s) {
   return (s == null ? '' : String(s))
@@ -73,7 +73,13 @@ function fmt(n) { return (Math.round((n || 0) * 100) / 100).toLocaleString('zh-C
 function fmt0(n) { return (n || 0).toLocaleString('zh-CN'); }
 
 // 根据模型预设 + 画面比例 + 画质 计算最终 size 字符串
-function computeGenSize(modelId, aspectId, qualityId, fallbackSize) {
+// customW/customH 仅当 qualityId==='custom' 时生效，可填任意像素（后端不截断 → 不限制）
+function computeGenSize(modelId, aspectId, qualityId, fallbackSize, customW, customH) {
+  if (qualityId === 'custom') {
+    const w = (customW && +customW > 0) ? Math.round(+customW) : 4096;
+    const h = (customH && +customH > 0) ? Math.round(+customH) : 4096;
+    return w + 'x' + h;
+  }
   if (aspectId === 'auto') return fallbackSize || '1024x1024';
   const map = QUALITY_SIZES[aspectId];
   if (!map) return fallbackSize || '1024x1024';
@@ -1144,7 +1150,7 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>③ AI 生成效果图</h3>
-        <div class="hint">选择模型、画面比例与画质后生成。默认 Pollinations 免费免 Key；豆包/OpenAI 需在系统设置或下方填写 API Key。</div>
+        <div class="hint">选择模型、画面比例与画质后生成。画质可选至 4K；选「自定义 (不限制)」可填任意宽×高像素。默认 Pollinations 免费免 Key；豆包/OpenAI 需在系统设置或下方填写 API Key。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
 
         <div class="gen-control-bar">
@@ -1160,6 +1166,15 @@ function renderSchemeEditor() {
           <div class="gen-field">
             <label>画质</label>
             <select id="scQuality" class="wfull">${Object.entries(QUALITY_LABELS).map(([k, v]) => `<option value="${k}" ${s.gen_config.quality === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          </div>
+          <div class="gen-field" id="scCustomField" style="display:none">
+            <label>自定义尺寸 (W × H 像素 · 不限制)</label>
+            <div class="gen-custom-size">
+              <input id="scCw" type="number" min="64" max="16384" step="64" value="4096" aria-label="宽">
+              <span>×</span>
+              <input id="scCh" type="number" min="64" max="16384" step="64" value="4096" aria-label="高">
+              <span class="gen-unit">px</span>
+            </div>
           </div>
           <div class="gen-field">
             <label>张数</label>
@@ -1205,9 +1220,15 @@ function renderSchemeEditor() {
   $('#scGen').addEventListener('click', genSchemeImages);
   $('#scModel').addEventListener('change', onSchemeModelChange);
   $('#scAspect').addEventListener('change', updateGenSizePreview);
-  $('#scQuality').addEventListener('change', updateGenSizePreview);
+  $('#scQuality').addEventListener('change', onSchemeQualityChange);
   $('#scAddItem').addEventListener('click', () => { state.scheme.items.push({ category: '植物-其他', name: '', spec: '', qty: 1, unit: '项', cost_price: 0 }); renderSchemeItems(); });
   onSchemeModelChange();
+  // 若已保存方案用的是自定义尺寸，回填 W×H 并展开输入框
+  if (s.gen_config && s.gen_config.quality === 'custom') {
+    const m = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(s.gen_config.size || '');
+    if (m) { const cwEl = $('#scCw'), chEl = $('#scCh'); if (cwEl) cwEl.value = m[1]; if (chEl) chEl.value = m[2]; }
+    const cf = $('#scCustomField'); if (cf) cf.style.display = 'flex';
+  }
   updateGenSizePreview();
   if (s.id) {
     $('#scSave').addEventListener('click', saveScheme);
@@ -1264,13 +1285,21 @@ function onSchemeModelChange() {
   if (keyRow) keyRow.style.display = (preset.provider === 'openai') ? 'flex' : 'none';
   updateGenSizePreview();
 }
+function onSchemeQualityChange() {
+  const quality = $('#scQuality').value;
+  const customField = $('#scCustomField');
+  if (customField) customField.style.display = (quality === 'custom') ? 'flex' : 'none';
+  updateGenSizePreview();
+}
 function updateGenSizePreview() {
   const preset = IMG_MODELS.find(m => m.id === $('#scModel').value) || IMG_MODELS[0];
   const aspect = $('#scAspect').value;
   const quality = $('#scQuality').value;
-  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024');
+  let cw, ch;
+  if (quality === 'custom') { cw = +$('#scCw').value || 4096; ch = +$('#scCh').value || 4096; }
+  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024', cw, ch);
   const box = $('#scSizePreview');
-  if (box) box.textContent = '输出尺寸：' + size + (aspect === 'auto' ? '（跟随系统设置）' : '');
+  if (box) box.textContent = '输出尺寸：' + size + (quality === 'custom' ? '（自定义 · 不限制）' : (aspect === 'auto' ? '（跟随系统设置）' : ''));
 }
 async function genSchemeImages() {
   const prompt = $('#scPrompt').value.trim();
@@ -1280,7 +1309,9 @@ async function genSchemeImages() {
   const preset = IMG_MODELS.find(m => m.id === modelId) || IMG_MODELS[0];
   const aspect = $('#scAspect').value;
   const quality = $('#scQuality').value;
-  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024');
+  let cw, ch;
+  if (quality === 'custom') { cw = +$('#scCw').value || 4096; ch = +$('#scCh').value || 4096; }
+  const size = computeGenSize(preset.id, aspect, quality, state.settings ? state.settings.img_gen_size : '1024x1024', cw, ch);
   const apiKey = $('#scApiKey') ? $('#scApiKey').value.trim() : '';
 
   // 记忆本次选择
