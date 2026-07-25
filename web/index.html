@@ -3,8 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>绿趣 · 让植物成为空间的加分项</title>
+  <title>绿趣植物空间艺术 · 让植物成为空间的加分项</title>
   <meta name="description" content="温州绿趣植物空间艺术科技有限公司，15年专注室内绿植空间美学。提供商业空间植物全案、家庭植物软装、单位绿植设计租赁、艺术盆栽礼品零售及美学课程服务。">
+  <meta name="keywords" content="绿植租赁,植物软装,艺术盆栽,温州,植物空间设计">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "name": "温州绿趣植物空间艺术科技有限公司",
+    "description": "室内绿植设计服务专家，15年专注植物空间美学",
+    "address": { "@type": "PostalAddress", "addressLocality": "温州", "addressRegion": "浙江", "streetAddress": "鹿城区六虹桥路991号" },
+    "telephone": "0577-88868293"
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -12,13 +23,14 @@
 </head>
 <body>
   <div class="leaf-float-layer" id="leafLayer" aria-hidden="true"></div>
+
   <nav class="navbar" id="navbar">
     <div class="nav-inner">
-      <a href="#" class="logo">
+      <a href="#home" class="logo">
         <span class="logo-icon">🌿</span>
         <span class="logo-text">绿趣</span>
       </a>
-      <button class="nav-toggle" id="navToggle" aria-label="菜单">
+      <button class="nav-toggle" id="navToggle" aria-label="菜单" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
       <ul class="nav-links" id="navLinks">
@@ -33,285 +45,309 @@
     </div>
   </nav>
 
+  <!-- Hero -->
   <section class="hero" id="home">
     <div class="hero-bg"></div>
-    <div class="hero-content">
+    <div class="hero-inner">
       <div class="hero-text">
         <div class="hero-tag">15年专注 · 室内绿植空间美学专家</div>
-        <h1 class="hero-title">让植物成为<br><span class="highlight">空间的加分项</span></h1>
-        <p class="hero-desc">以差异化的植物美学设计，让热爱生活的人，享受植物的美和乐趣。温州绿趣植物空间艺术科技有限公司。</p>
+        <h1 class="hero-title">让植物成为<br><span class="hl">空间的加分项</span></h1>
+        <p class="hero-desc">以差异化的植物美学设计，让热爱生活的人享受植物的美与乐趣。温州绿趣植物空间艺术科技有限公司，为商业与家庭空间注入自然生命力。</p>
         <div class="hero-actions">
           <a href="#contact" class="btn btn-primary">预约免费设计</a>
           <a href="#services" class="btn btn-outline-light">了解服务 →</a>
         </div>
       </div>
-      <div class="hero-visual">
-        <div class="hero-card hero-card-main" data-label="阳光 · 绿植 · 空间">
-          <div class="card-shine"></div>
-        </div>
-        <div class="hero-card hero-card-sub" data-label="植物美学细节"></div>
-        <div class="hero-badge">
+      <div class="hero-collage">
+        <div class="c-main ph g-forest" data-label="阳光 · 绿植 · 空间"></div>
+        <div class="c-sub ph g-brown" data-label="植物美学细节"></div>
+        <div class="c-badge">
           <span>🌱</span>
-          <div>
-            <strong>500+企业客户</strong>
-            <small>· 92%续约率</small>
-          </div>
+          <div><strong>500+ 企业客户</strong><small>· 92% 续约率</small></div>
         </div>
       </div>
     </div>
-    <div class="scroll-hint">
-      <span>向下探索</span>
-      <div class="scroll-line"></div>
+    <div class="scroll-hint"><span>向下探索</span><div class="scroll-line"></div></div>
+  </section>
+
+  <!-- 关于 / 品牌理念 -->
+  <section class="section about" id="about">
+    <div class="container mag-grid about-grid">
+      <div class="about-visual reveal">
+        <div class="v-main ph g-moss" data-label="绿趣植物美学空间"></div>
+        <div class="v-chip"><span>🌿</span><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
+      </div>
+      <div class="about-text reveal">
+        <div class="eyebrow">关于绿趣</div>
+        <h2 class="section-title">15年深耕，<br>用植物美学重新定义空间价值</h2>
+        <p class="quote">"让热爱生活的人，享受植物的美和乐趣。"</p>
+        <p>我们不仅提供绿植，更提供一种与自然共生的生活方式。每一位绿趣人都是植物美学的传递者，用专业与热爱，为每一个空间注入生命的力量。</p>
+        <ul class="value-list">
+          <li><strong>品牌理念：</strong>让热爱生活的人，享受植物的美和乐趣</li>
+          <li><strong>核心理念：</strong>融合自然，融美于居</li>
+          <li><strong>服务承诺：</strong>科学设计、美学方案、场景化布置全流程服务</li>
+        </ul>
+      </div>
     </div>
   </section>
 
-  <section class="services" id="services">
+  <!-- 服务项目（6 列不对称杂志网格） -->
+  <section class="section services" id="services">
     <div class="container">
-      <div class="section-header split">
+      <div class="section-head split reveal">
         <div>
-          <div class="section-tag">服务项目</div>
+          <div class="eyebrow">服务项目</div>
           <h2 class="section-title">六大服务<br>一个绿趣</h2>
         </div>
         <p class="section-lead">从商业空间到家庭生活，从设计服务到美学教育，一站式植物空间解决方案，让每个空间都成为会呼吸的艺术品。</p>
       </div>
-      <div class="services-grid">
-        <article class="service-card featured">
-          <div class="service-visual forest"></div>
-          <div class="service-body">
+      <div class="svc-grid">
+        <article class="svc-card svc-1 reveal">
+          <div class="svc-visual g-forest"></div>
+          <div class="svc-body">
+            <div class="svc-num">01</div>
             <h3>商业空间植物全案</h3>
-            <p>银行、酒店、商场、写字楼、政府大厅等公共空间，从设计到养护的一站式植物生态服务。</p>
+            <p>银行、酒店、商场、写字楼、政府大厅等公共空间，从设计到养护的一站式植物生态服务。年客单价 2 万 — 100 万。</p>
           </div>
         </article>
-        <article class="service-card">
-          <div class="service-visual sage"></div>
-          <div class="service-body">
+        <article class="svc-card svc-2 reveal">
+          <div class="svc-visual g-sage"></div>
+          <div class="svc-body">
+            <div class="svc-num">02</div>
             <h3>家庭植物软装</h3>
-            <p>区域行业首创。全屋绿植软装设计，覆盖阳台、客厅、玄关、书房，"科学设计＋美学方案＋场景化布置"全流程服务。</p>
+            <p>区域行业首创。全屋绿植软装设计，覆盖阳台、客厅、玄关、书房。</p>
           </div>
         </article>
-        <article class="service-card wide">
-          <div class="service-visual moss"></div>
-          <div class="service-body">
+        <article class="svc-card svc-3 reveal">
+          <div class="svc-visual g-moss"></div>
+          <div class="svc-body">
+            <div class="svc-num">03</div>
             <h3>单位绿植设计租赁</h3>
-            <p>为银行、酒店、商场、写字楼、政府大厅等商业与公共空间，提供从设计到养护的一站式植物全案服务。不只是租赁绿植，更是为您的空间量身打造一套活的植物生态系统。年客单价2万—100万。</p>
+            <p>为银行、酒店、商场、写字楼、政府大厅等商业与公共空间量身打造活的植物生态系统。</p>
           </div>
         </article>
-        <article class="service-card">
-          <div class="service-visual mint"></div>
-          <div class="service-body">
+        <article class="svc-card svc-4 reveal">
+          <div class="svc-visual g-mint"></div>
+          <div class="svc-body">
+            <div class="svc-num">04</div>
             <h3>艺术盆栽礼品零售</h3>
-            <p>原创设计小绿植盆景，"有生命的手作礼"。68-328元手作套餐，2024年春节销售达1600盆。</p>
+            <p>原创设计小绿植盆景，"有生命的手作礼"。</p>
           </div>
         </article>
-        <article class="service-card">
-          <div class="service-visual leaf"></div>
-          <div class="service-body">
+        <article class="svc-card svc-5 reveal">
+          <div class="svc-visual g-leaf"></div>
+          <div class="svc-body">
+            <div class="svc-num">05</div>
             <h3>植物美学手作课程</h3>
-            <p>累计授课600+场，触达10000+人。适用于单位团建、大客户邀约、VIP答谢会。</p>
+            <p>累计授课 600+ 场，触达 10000+ 人。</p>
           </div>
         </article>
-        <article class="service-card">
-          <div class="service-visual fern"></div>
-          <div class="service-body">
+        <article class="svc-card svc-6 reveal">
+          <div class="svc-visual g-fern"></div>
+          <div class="svc-body">
+            <div class="svc-num">06</div>
             <h3>绿植行业培训</h3>
-            <p>面向全国家政老板、系统内培训。2023年培训102名学员，人均转化产值4万+。</p>
-          </div>
-        </article>
-        <article class="service-card">
-          <div class="service-visual tea"></div>
-          <div class="service-body">
-            <h3>茶饮咖啡服务</h3>
-            <p>融合空间美学、新式茶歇、季节性饮品，提供植物主题空间的沉浸式体验。</p>
+            <p>面向全国家政老板、系统内培训。</p>
           </div>
         </article>
       </div>
     </div>
   </section>
 
-  <section class="stats-bar">
+  <!-- 数据条 -->
+  <section class="stats">
     <div class="container stats-grid">
-      <div class="stat-item"><strong>15</strong><span>年行业深耕</span></div>
-      <div class="stat-item"><strong>300+</strong><span>企业客户</span></div>
-      <div class="stat-item"><strong>92%</strong><span>续约率</span></div>
-      <div class="stat-item"><strong>600+</strong><span>经典案例</span></div>
-      <div class="stat-item"><strong>38</strong><span>人专业团队</span></div>
+      <div class="stat-item reveal"><strong>15</strong><span>年行业深耕</span></div>
+      <div class="stat-item reveal"><strong>300+</strong><span>企业客户</span></div>
+      <div class="stat-item reveal"><strong>92%</strong><span>续约率</span></div>
+      <div class="stat-item reveal"><strong>600+</strong><span>经典案例</span></div>
+      <div class="stat-item reveal"><strong>38</strong><span>人专业团队</span></div>
     </div>
   </section>
 
-  <section class="cases" id="cases">
+  <!-- 经典案例 -->
+  <section class="section cases" id="cases">
     <div class="container">
-      <div class="section-header">
-        <div class="section-tag">经典案例</div>
+      <div class="section-head reveal">
+        <div class="eyebrow">经典案例</div>
         <h2 class="section-title">每一个空间，<br>都是一件活的植物艺术品</h2>
       </div>
       <div class="cases-grid">
-        <article class="case-card large">
-          <div class="case-visual mountain"></div>
+        <article class="case-card lg reveal">
+          <div class="case-visual g-forest"></div>
           <div class="case-info">
             <span class="case-tag">5A级景区</span>
             <h3>雁荡山游客中心</h3>
             <p>融合山水意境的室内绿植设计，自然与人文的对话。</p>
           </div>
         </article>
-        <div class="case-col">
-          <article class="case-card">
-            <div class="case-visual bank"></div>
-            <div class="case-info">
-              <span class="case-tag">金融机构</span>
-              <h3>华夏银行温州分行</h3>
-              <p>金融空间的植物美学设计</p>
-            </div>
-          </article>
-          <article class="case-card">
-            <div class="case-visual home"></div>
-            <div class="case-info">
-              <span class="case-tag">家居空间</span>
-              <h3>私人住宅植物软装</h3>
-              <p>全屋绿植设计，自然融入生活</p>
-            </div>
-          </article>
-        </div>
-      </div>
-      <div class="cases-nav">
-        <button class="cases-btn" aria-label="上一个">←</button>
-        <button class="cases-btn" aria-label="下一个">→</button>
+        <article class="case-card sm reveal">
+          <div class="case-visual g-moss"></div>
+          <div class="case-info">
+            <span class="case-tag">金融机构</span>
+            <h3>华夏银行温州分行</h3>
+            <p>金融空间的植物美学设计</p>
+          </div>
+        </article>
+        <article class="case-card sm2 reveal">
+          <div class="case-visual g-brown"></div>
+          <div class="case-info">
+            <span class="case-tag">家居空间</span>
+            <h3>私人住宅植物软装</h3>
+            <p>全屋绿植设计，自然融入生活</p>
+          </div>
+        </article>
       </div>
     </div>
   </section>
 
-  <section class="testimonials">
+  <!-- 客户心声 -->
+  <section class="section voices">
     <div class="container">
-      <div class="section-header center">
-        <div class="section-tag">客户心声</div>
-        <h2 class="section-title">平均合作7年，用专业赢得信赖</h2>
+      <div class="section-head center reveal">
+        <div class="eyebrow">客户心声</div>
+        <h2 class="section-title">平均合作 7 年，用专业赢得信赖</h2>
       </div>
-      <div class="testimonials-grid">
-        <blockquote class="testimonial">
-          <p>"绿趣团队对植物的呈现超出预期。他们不只是摆放几盆花，而是真正把室内外空间当作一个整体来设计。每次方案都会让我们惊喜。"</p>
-          <footer>
-            <span class="t-avatar">华</span>
-            <div>
-              <strong>华夏银行温州分行</strong>
-              <span>行政部负责人</span>
-            </div>
-          </footer>
+      <div class="voices-grid">
+        <blockquote class="voice reveal">
+          <p>"绿趣团队对植物的呈现超出预期。他们不只是摆放几盆花，而是真正把室内外空间当作一个整体来设计，每次方案都让我们惊喜。"</p>
+          <footer><span class="v-avatar">华</span><div><strong>华夏银行温州分行</strong><span>行政部负责人</span></div></footer>
         </blockquote>
-        <blockquote class="testimonial">
-          <p>"和绿趣合作的植物租赁已经 seventh 年，他们专业及时的养护响应让我们省心，绿植状态始终保持得很好。"</p>
-          <footer>
-            <span class="t-avatar">温</span>
-            <div>
-              <strong>温州机场集团</strong>
-              <span>物业管理部门</span>
-            </div>
-          </footer>
+        <blockquote class="voice reveal">
+          <p>"和绿趣合作的植物租赁已经第七年，专业及时的养护响应让我们省心，绿植状态始终保持得很好。"</p>
+          <footer><span class="v-avatar">温</span><div><strong>温州机场集团</strong><span>物业管理部门</span></div></footer>
         </blockquote>
-        <blockquote class="testimonial">
+        <blockquote class="voice reveal">
           <p>"家里的阳台原本堆满杂物，绿趣帮我们变成了全家人最喜欢待的地方。科学养护方案让植物一直长得很好，四季都有生机。"</p>
-          <footer>
-            <span class="t-avatar">陈</span>
-            <div>
-              <strong>陈女士</strong>
-              <span>家庭植物软装客户</span>
-            </div>
-          </footer>
+          <footer><span class="v-avatar">陈</span><div><strong>陈女士</strong><span>家庭植物软装客户</span></div></footer>
         </blockquote>
       </div>
     </div>
   </section>
 
-  <section class="founder" id="about">
-    <div class="container founder-grid">
-      <div class="founder-visual">
+  <!-- 创始人 -->
+  <section class="section founder">
+    <div class="container mag-grid founder-grid">
+      <div class="founder-visual reveal">
         <div class="founder-photo"></div>
-        <div class="founder-card">
-          <span>🌿</span>
-          <strong>城市森林会客厅</strong>
-          <small>杨府山公园 · 映秀山房</small>
-        </div>
+        <div class="founder-card"><span>🌿</span><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
       </div>
-      <div class="founder-text">
-        <div class="section-tag">创始人故事</div>
-        <h2 class="section-title">15年，<br>只做一件事</h2>
+      <div class="founder-text reveal">
+        <div class="eyebrow">创始人故事</div>
+        <h2>15年，只做一件事</h2>
         <p class="quote">"让热爱生活的人，享受植物的美和乐趣。"</p>
-        <p>2010年，一次日本京都庭院植物之旅，让戴晓东深深感受到了东方植物美学的力量。那些精心修剪的松树、随四季变化的庭院，与空间恰到好处的融合，点燃了他心中的热爱。</p>
-        <p>随后他持续游学日本、韩国与台湾地区，积累了丰富的植物空间设计经验。绿趣坚持以植物美学为核心，从第一盆小型盆景到为银行、企业做大型空间，这颗初心已经延续了15年。</p>
+        <p>2010 年，一次日本京都庭院植物之旅，让戴晓东深深感受到了东方植物美学的力量。那些精心修剪的松树、随四季变化的庭院，与空间恰到好处的融合，点燃了他心中的热爱。</p>
+        <p>随后他持续游学日本、韩国与台湾地区，积累了丰富的植物空间设计经验。绿趣坚持以植物美学为核心，从第一盆小型盆景到为银行、企业做大型空间，这颗初心已延续 15 年。</p>
         <p><strong>戴晓东</strong><br>绿趣创始人 · 15年空间植物美学</p>
       </div>
     </div>
   </section>
 
+  <!-- CTA 横幅 -->
   <section class="cta-band">
-    <div class="container cta-inner">
-      <div class="cta-icon">🌿</div>
+    <div class="container">
+      <div class="ic">🌿</div>
       <h2>让植物成为您空间的加分项</h2>
       <p>预约免费上门设计，让我们为您的空间注入自然之美</p>
       <a href="#contact" class="btn btn-light">立即预约免费咨询</a>
     </div>
   </section>
 
-  <section class="about-values">
-    <div class="container values-grid">
-      <div class="values-text">
-        <div class="section-tag">关于绿趣</div>
-        <h2 class="section-title">15年深耕，<br>用植物美学重新<br>定义空间价值</h2>
-        <p>我们不仅提供绿植，更提供一种与自然共生的生活方式。每一位绿趣人都是植物美学的传递者，用专业和热爱，为每一个空间注入生命的力量。</p>
-        <ul class="value-list">
-          <li><strong>品牌理念：</strong>让热爱生活的人，享受植物的美和乐趣</li>
-          <li><strong>核心理念：</strong>融合自然，融美</li>
-          <li><strong>服务承诺：</strong>科学设计、美学方案、场景化布置全流程服务</li>
-        </ul>
+  <!-- 美学课堂 -->
+  <section class="section classroom" id="classroom">
+    <div class="container mag-grid classroom-grid">
+      <div class="classroom-text reveal">
+        <div class="eyebrow">植物美学课堂</div>
+        <h2 class="section-title">亲手制作一盆<br>活的艺术品</h2>
+        <p>这不仅是一堂课，更是一次与自然对话的美学体验。累计授课 600+ 场，触达 10000+ 人。适用于单位团建、大客户邀约、VIP 答谢会等多种场景。</p>
+        <a href="#contact" class="btn btn-primary">预约课程体验</a>
       </div>
-      <div class="values-visual">
-        <div class="values-card"></div>
+      <div class="classroom-visual reveal"></div>
+      <div class="course-grid">
+        <div class="course-card reveal"><div class="course-img g-fern"></div><h4>植物微景观手作</h4><p>在透明玻璃容器中，用苔藓、多肉、小石头创造袖珍自然世界。适合零基础。</p><div class="course-meta">约2小时 · 10-30人 · 68元起</div></div>
+        <div class="course-card reveal"><div class="course-img g-leaf"></div><h4>艺术盆栽创作</h4><p>学习东方盆景美学，亲手制作有灵魂的艺术盆栽。全程专业指导。</p><div class="course-meta">约3小时 · 5-20人 · 168元起</div></div>
+        <div class="course-card reveal"><div class="course-img g-brown"></div><h4>企业团建定制</h4><p>根据企业预算与主题定制，在协作中促进团队伙伴。</p><div class="course-meta">定制 · 20-100人 · 面议</div></div>
+        <div class="course-card reveal"><div class="course-img g-mint"></div><h4>VIP答谢会 / 客户沙龙</h4><p>为 VIP 客户打造沉浸式植物美学体验，可选配茶饮咖啡服务。</p><div class="course-meta">定制 · 10-50人 · 面议</div></div>
       </div>
     </div>
   </section>
 
-  <section class="timeline">
+  <!-- 加盟合作 -->
+  <section class="section partner" id="partner">
     <div class="container">
-      <div class="section-header center">
-        <div class="section-tag">品牌历程</div>
+      <div class="section-head center light reveal">
+        <div class="eyebrow">加盟合作</div>
+        <h2 class="section-title">携手绿趣，共享植物美学蓝海市场</h2>
+        <p class="section-lead" style="color:rgba(255,255,255,.75);margin-top:12px">成熟商业模式 · 完善服务体系 · 持续品牌赋能</p>
+      </div>
+      <div class="partner-grid">
+        <div class="partner-card reveal">
+          <div class="pc-icon">💛</div><h4>品牌加盟</h4>
+          <p>成熟的商业模式、完善的培训体系、持续的品牌赋能，成为当地植物美学服务专家。</p>
+          <div class="pc-price">5万<span>起</span></div>
+        </div>
+        <div class="partner-card reveal">
+          <div class="pc-icon">💡</div><h4>众筹合作</h4>
+          <p>灵活的合作模式，共享供应链资源与优势，多种方案，总有一款适合您。</p>
+          <div class="pc-price">面议</div>
+        </div>
+        <div class="partner-card reveal">
+          <div class="pc-icon">🎓</div><h4>校企合作</h4>
+          <p>与温州科技职业学院等高校合作，共建实训基地，培养行业新生力量。</p>
+          <div class="pc-price">产学研一体化</div>
+        </div>
+      </div>
+      <div class="partner-cta"><a href="#contact" class="btn btn-light">咨询加盟详情</a></div>
+    </div>
+  </section>
+
+  <!-- 品牌历程 -->
+  <section class="section timeline">
+    <div class="container">
+      <div class="section-head center reveal">
+        <div class="eyebrow">品牌历程</div>
         <h2 class="section-title">每一步，都算数</h2>
       </div>
       <div class="timeline-list">
-        <div class="timeline-item"><span class="year">2010</span><div class="event"><h4>品牌创立</h4><p>戴晓东创办绿趣，开始室内绿植设计服务探索之路。</p></div></div>
-        <div class="timeline-item"><span class="year">2013</span><div class="event"><h4>公司正式注册</h4><p>温州绿趣植物空间艺术科技有限公司正式成立。</p></div></div>
-        <div class="timeline-item"><span class="year">2016</span><div class="event"><h4>客户突破100家</h4><p>完成机关事业单位、商业空间等标杆项目，品牌影响力快速提升。</p></div></div>
-        <div class="timeline-item"><span class="year">2019</span><div class="event"><h4>家庭植物软装首创</h4><p>区域行业首创"家庭植物软装"服务，开辟全新业务板块。</p></div></div>
-        <div class="timeline-item"><span class="year">2023</span><div class="event"><h4>美学课程体系成型</h4><p>累计授课600+场，触达10000+人。</p></div></div>
-        <div class="timeline-item"><span class="year">2024</span><div class="event"><h4>六大板块全面布局</h4><p>春节销售1600盆，行业培训102名学员，进入全新发展阶段。</p></div></div>
-        <div class="timeline-item"><span class="year">2025</span><div class="event"><h4>迈向未来</h4><p>300+企业客户，92%续约率，持续以植物美学赋能更多空间。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2010</span><div class="event"><h4>品牌创立</h4><p>戴晓东创办绿趣，开始室内绿植设计服务探索之路。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2013</span><div class="event"><h4>公司正式注册</h4><p>温州绿趣植物空间艺术科技有限公司正式成立。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2016</span><div class="event"><h4>客户突破 100 家</h4><p>完成机关事业单位、商业空间等标杆项目，品牌影响力快速提升。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2019</span><div class="event"><h4>家庭植物软装首创</h4><p>区域行业首创"家庭植物软装"服务，开辟全新业务板块。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2023</span><div class="event"><h4>美学课程体系成型</h4><p>累计授课 600+ 场，触达 10000+ 人。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2024</span><div class="event"><h4>六大板块全面布局</h4><p>春节销售 1600 盆，行业培训 102 名学员，进入全新发展阶段。</p></div></div>
+        <div class="timeline-item reveal"><span class="year">2025</span><div class="event"><h4>迈向未来</h4><p>300+ 企业客户，92% 续约率，持续以植物美学赋能更多空间。</p></div></div>
       </div>
     </div>
   </section>
 
-  <section class="team">
+  <!-- 核心团队 -->
+  <section class="section team">
     <div class="container">
-      <div class="section-header center">
-        <div class="section-tag">核心团队</div>
+      <div class="section-head center reveal">
+        <div class="eyebrow">核心团队</div>
         <h2 class="section-title">38人专业团队<br>用热爱守护每一株植物</h2>
       </div>
       <div class="team-grid">
-        <div class="team-member"><div class="tm-avatar founder-av">戴</div><h4>戴晓东</h4><p>创始人/首席设计师<br>15年专注植物美学，赴日韩台游学，东方植物美学空间设计实践者。</p></div>
-        <div class="team-member"><div class="tm-avatar">设</div><h4>设计团队</h4><p>8名植物美学设计师<br>空间设计与植物学双重背景，每个方案兼具美学与科学。</p></div>
-        <div class="team-member"><div class="tm-avatar">护</div><h4>养护团队</h4><p>12名资深养护师<br>平均从业5年以上，精准把控室内植物养护之道。</p></div>
-        <div class="team-member"><div class="tm-avatar">服</div><h4>服务团队</h4><p>项目经理 · 客户服务<br>定期巡检养护，让客户享受长久的绿色空间体验。</p></div>
+        <div class="team-member reveal"><div class="tm-avatar founder-av">戴</div><h4>戴晓东</h4><p>创始人/首席设计师<br>15年专注植物美学，赴日韩台游学，东方植物美学空间设计实践者。</p></div>
+        <div class="team-member reveal"><div class="tm-avatar">设</div><h4>设计团队</h4><p>8名植物美学设计师<br>空间设计与植物学双重背景，每个方案兼具美学与科学。</p></div>
+        <div class="team-member reveal"><div class="tm-avatar">护</div><h4>养护团队</h4><p>12名资深养护师<br>平均从业5年以上，精准把控室内植物养护之道。</p></div>
+        <div class="team-member reveal"><div class="tm-avatar">服</div><h4>服务团队</h4><p>项目经理 · 客户服务<br>定期巡检养护，让客户享受长久的绿色空间体验。</p></div>
       </div>
       <div class="badges">
-        <div class="badge"><span>🏆</span><strong>ISO质量认证</strong><small>ISO9000等认证</small></div>
-        <div class="badge"><span>🌸</span><strong>省花卉协会</strong><small>副会长单位</small></div>
-        <div class="badge"><span>🎓</span><strong>校企合作</strong><small>温州科技职业学院</small></div>
-        <div class="badge"><span>⭐</span><strong>行业标杆</strong><small>浙江省/中国花卉租摆优秀企业</small></div>
+        <div class="badge reveal"><span>🏆</span><strong>ISO质量认证</strong><small>ISO9000等认证</small></div>
+        <div class="badge reveal"><span>🌸</span><strong>省花卉协会</strong><small>副会长单位</small></div>
+        <div class="badge reveal"><span>🎓</span><strong>校企合作</strong><small>温州科技职业学院</small></div>
+        <div class="badge reveal"><span>⭐</span><strong>行业标杆</strong><small>浙江省/中国花卉租摆优秀企业</small></div>
       </div>
     </div>
   </section>
 
-  <section class="portfolio" id="portfolio">
+  <!-- 案例集（筛选） -->
+  <section class="section portfolio" id="portfolio">
     <div class="container">
-      <div class="section-header split">
+      <div class="section-head split reveal">
         <div>
-          <div class="section-tag">案例集</div>
+          <div class="eyebrow">案例集</div>
           <h2 class="section-title">300+项目，<br>每一个都是用心之作</h2>
         </div>
         <div class="filter-tabs" id="portfolioTabs">
@@ -322,71 +358,23 @@
         </div>
       </div>
       <div class="portfolio-grid" id="portfolioGrid">
-        <div class="portfolio-item" data-cat="commercial"><div class="p-visual p-forest"></div><h4>机场候机厅绿植</h4></div>
-        <div class="portfolio-item" data-cat="commercial"><div class="p-visual p-bank"></div><h4>国有银行网点</h4></div>
-        <div class="portfolio-item" data-cat="home"><div class="p-visual p-balcony"></div><h4>私人阳台花园</h4></div>
-        <div class="portfolio-item" data-cat="commercial"><div class="p-visual p-office"></div><h4>企业办公中庭</h4></div>
-        <div class="portfolio-item" data-cat="event"><div class="p-visual p-salon"></div><h4> VIP 植物沙龙</h4></div>
-        <div class="portfolio-item" data-cat="home"><div class="p-visual p-living"></div><h4>客厅植物造景</h4></div>
-        <div class="portfolio-item" data-cat="commercial"><div class="p-visual p-hotel"></div><h4>酒店大堂植物</h4></div>
-        <div class="portfolio-item" data-cat="event"><div class="p-visual p-workshop"></div><h4>美学手作课堂</h4></div>
+        <div class="portfolio-item" data-cat="commercial"><div class="p-visual g-forest"></div><h4>机场候机厅绿植</h4></div>
+        <div class="portfolio-item" data-cat="commercial"><div class="p-visual g-moss"></div><h4>国有银行网点</h4></div>
+        <div class="portfolio-item" data-cat="home"><div class="p-visual g-leaf"></div><h4>私人阳台花园</h4></div>
+        <div class="portfolio-item" data-cat="commercial"><div class="p-visual g-mint"></div><h4>企业办公中庭</h4></div>
+        <div class="portfolio-item" data-cat="event"><div class="p-visual g-brown"></div><h4>VIP 植物沙龙</h4></div>
+        <div class="portfolio-item" data-cat="home"><div class="p-visual g-sage"></div><h4>客厅植物造景</h4></div>
+        <div class="portfolio-item" data-cat="commercial"><div class="p-visual g-fern"></div><h4>酒店大堂植物</h4></div>
+        <div class="portfolio-item" data-cat="event"><div class="p-visual g-olive"></div><h4>美学手作课堂</h4></div>
       </div>
     </div>
   </section>
 
-  <section class="classroom" id="classroom">
-    <div class="container classroom-grid">
-      <div class="classroom-text">
-        <div class="section-tag">植物美学课堂</div>
-        <h2 class="section-title">亲手制作一盆<br>活的艺术品</h2>
-        <p>这不仅是一堂课，更是一次与自然对话的美学体验。累计授课600+场，触达10000+人。适用于单位团建、大客户邀约、VIP答谢会等多种场景。</p>
-        <a href="#contact" class="btn btn-primary">预约课程体验</a>
-      </div>
-      <div class="classroom-visual"></div>
-      <div class="course-grid">
-        <div class="course-card"><div class="course-img c1"></div><h4>植物微景观手作</h4><p>在透明玻璃容器中，用苔藓、多肉、小石头创造袖珍自然世界。适合零基础。</p><div class="course-meta">约2小时 · 10-30人 · 68元起</div></div>
-        <div class="course-card"><div class="course-img c2"></div><h4>艺术盆栽创作</h4><p>学习东方盆景美学，亲手制作有灵魂的艺术盆栽。全程专业指导。</p><div class="course-meta">约3小时 · 5-20人 · 168元起</div></div>
-        <div class="course-card"><div class="course-img c3"></div><h4>企业团建定制</h4><p>根据企业预算与主题定制，在协作中促进团队伙伴。</p><div class="course-meta">定制 · 20-100人 · 面议</div></div>
-        <div class="course-card"><div class="course-img c4"></div><h4>VIP答谢会 / 客户沙龙</h4><p>为VIP客户打造沉浸式的植物美学体验，可选配茶饮咖啡服务。</p><div class="course-meta">定制 · 10-50人 · 面议</div></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="partner" id="partner">
-    <div class="container">
-      <div class="section-header center light">
-        <div class="section-tag">加盟合作</div>
-        <h2 class="section-title">携手绿趣，共享植物美学蓝海市场</h2>
-        <p class="section-sub">成熟商业模式 · 完善服务体系 · 持续品牌赋能</p>
-      </div>
-      <div class="partner-grid">
-        <div class="partner-card">
-          <div class="pc-icon">💛</div>
-          <h4>品牌加盟</h4>
-          <p>成熟的商业模式、完善的培训体系、持续的品牌赋能，成为当地植物美学服务专家。</p>
-          <div class="pc-price">5万<span>起</span></div>
-        </div>
-        <div class="partner-card">
-          <div class="pc-icon">💡</div>
-          <h4>众筹合作</h4>
-          <p>灵活的合作模式，共享供应链资源与供应链优势，多种方案，总有一款适合您。</p>
-          <div class="pc-price">面议</div>
-        </div>
-        <div class="partner-card">
-          <div class="pc-icon">🎓</div>
-          <h4>校企合作</h4>
-          <p>与温州科技职业学院等高校合作，共建实训基地，培养行业新生力量。</p>
-          <div class="pc-price">产学研一体化</div>
-        </div>
-      </div>
-      <div class="partner-cta"><a href="#contact" class="btn btn-light">咨询加盟详情</a></div>
-    </div>
-  </section>
-
-  <section class="contact" id="contact">
+  <!-- 联系我们 -->
+  <section class="section contact" id="contact">
     <div class="container contact-grid">
-      <div class="contact-info">
-        <div class="section-tag">联系我们</div>
+      <div class="contact-info reveal">
+        <div class="eyebrow">联系我们</div>
         <h2 class="section-title">预约免费<br>上门设计</h2>
         <div class="info-list">
           <div class="info-item"><span class="info-icon">📍</span><div><strong>公司地址</strong><p>浙江省温州市鹿城区六虹桥路991号</p></div></div>
@@ -396,7 +384,7 @@
         </div>
         <div class="map-card"></div>
       </div>
-      <div class="contact-form-wrap">
+      <div class="contact-form-wrap reveal">
         <h3>📝 预约免费上门设计</h3>
         <form id="bookingForm" class="contact-form">
           <div class="form-row">
@@ -425,6 +413,7 @@
     </div>
   </section>
 
+  <!-- 页脚 -->
   <footer class="footer">
     <div class="container footer-grid">
       <div class="footer-brand">
