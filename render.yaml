@@ -1,16 +1,11 @@
 # Render 部署配置（Blueprint）
 # 部署步骤：仓库已推到 GitHub，在 render.com 新建 Blueprint 关联本仓库即可自动生效。
 #
-# 免费版（plan: free）说明：
-#   - 不用持久盘，数据库写入 ./greenfun.db（临时文件系统，实例重启/休眠后会被重置）。
-#   - 免费实例 15 分钟无访问会休眠，下次访问自动唤醒（首访略慢）。
-#   - 适合先跑起来试用、内部小团队低频使用。
-#
-# 如需数据持久化（生产推荐）：
-#   1) 在 Render 控制台把本服务升级到 Starter 计划（$7/月）；
-#   2) 为该服务添加一个 Disk（挂载路径 /data，大小 1GB）；
-#   3) 新增环境变量 DB_PATH=/data/greenfun.db（app.py 已支持，无需改代码）。
-#   这样数据库就持久保存，重启也不会丢。
+# 持久化部署（plan: starter + Disk）：已在本文件声明 Starter 计划与 /data 持久盘，
+# 数据库(greenfun.db)与上传资源(uploads)全部落在 /data，实例重建/重启不再丢失。
+# 首次挂载空盘启动会由 init_db 自动建库并种子：管理员账号 lvquguanliyuan/123456、
+# 起始积分(默认 1000，可设环境变量 ADMIN_START_CREDITS 调整)、系统设置(含环境变量灌入的生图 Key)。
+# 注意：Starter 计划 $7/月，首次需在 Render 控制台绑定付费方式并确认升级 + 挂盘。
 #
 # 生图 API Key 等敏感配置持久化（免费版也适用，推荐）：
 #   免费版磁盘会随重建重置，导致后台填写的 API Key 丢失。
@@ -28,8 +23,33 @@ services:
   - type: web
     name: greenfun
     runtime: python
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     # 注意：PORT 由 Render 平台自动注入，app.py 已读取，这里不要再写死。
     healthCheckPath: /api/health
+    # 持久盘：挂载到 /data，数据库(greenfun.db)与上传资源(uploads)都落在这里，
+    # 实例重建/重启不再丢失（免费版不支持 Disk，需 Starter 计划 $7/月）。
+    disks:
+      - name: greenfun-data
+        mountPath: /data
+        sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/greenfun.db
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      # 以下生图敏感配置建议仍在 Render 控制台 Environment 手动填写（不进代码库）；
+      # app.py 启动时由 _seed_env_settings 自动灌入系统设置，跨重建持久保留。
+      - key: GREENFUN_IMG_GEN_PROVIDER
+        sync: false
+      - key: GREENFUN_IMG_GEN_API_KEY
+        sync: false
+      - key: GREENFUN_IMG_GEN_BASE_URL
+        sync: false
+      - key: GREENFUN_IMG_GEN_MODEL
+        sync: false
+      - key: GREENFUN_IMG_GEN_SIZE
+        sync: false
+      - key: GREENFUN_IMG_ANALYSIS_MODEL
+        sync: false

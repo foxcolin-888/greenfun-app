@@ -31,6 +31,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 FORMS_DIR = os.path.join(BASE_DIR, "forms")
 DB_PATH = os.environ.get("DB_PATH", os.path.join(BASE_DIR, "greenfun.db"))
+# 上传资源（现场照片 / AI 效果图）根目录；持久化部署时设 UPLOAD_DIR=/data/uploads
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(WEB_DIR, "uploads"))
+# 全新库时管理员的起始积分（持久盘下仅首次种子一次，后续充值/花费均保留）
+ADMIN_START_CREDITS = int(os.environ.get("ADMIN_START_CREDITS", "1000"))
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8000))
 
@@ -493,8 +497,8 @@ def init_db():
         created_at TEXT
     )""")
     conn.commit()
-    # 上传目录（现场照片 / AI 效果图）
-    os.makedirs(os.path.join(WEB_DIR, "uploads", "schemes"), exist_ok=True)
+    # 上传目录（现场照片 / AI 效果图），可指向持久盘 UPLOAD_DIR
+    os.makedirs(os.path.join(UPLOAD_DIR, "schemes"), exist_ok=True)
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -502,6 +506,13 @@ def init_db():
         for u, pw, name, role in DEFAULT_USERS:
             conn.execute("INSERT INTO users (username, pw, name, role, active, created_at) VALUES (?,?,?,?,1,?)",
                          (u, hash_pw(pw), name, role, t))
+    # 种子：积分账户（仅全新库；持久盘下首次种子后保留，充值/花费不丢）
+    if conn.execute("SELECT COUNT(*) FROM credits").fetchone()[0] == 0:
+        for (u, pw, name, role) in DEFAULT_USERS:
+            row = conn.execute("SELECT id FROM users WHERE username=?", (u,)).fetchone()
+            if row:
+                conn.execute("INSERT INTO credits (user_id, balance) VALUES (?,?)",
+                             (row["id"], ADMIN_START_CREDITS))
     # 种子：价格库
     if conn.execute("SELECT COUNT(*) FROM price_items").fetchone()[0] == 0:
         t = now_str()
@@ -1026,9 +1037,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("admin/index.html", "text/html; charset=utf-8", head_only=head_only)
         if path.startswith("/admin/"):
             return self._static(path[1:], None, head_only=head_only)  # 自动推断 content-type
-        # 上传资源（现场照片 / AI 效果图） -> web/uploads/*
+        # 上传资源（现场照片 / AI 效果图） -> UPLOAD_DIR（可指向持久盘 /data/uploads）
         if path.startswith("/uploads/"):
-            return self._static(path[1:], None, head_only=head_only)
+            return self._serve_upload(path[len("/uploads/"):], head_only=head_only)
         # 对外品牌官网根路径 -> web/index.html
         if path in ("/", "/index.html"):
             return self._static("index.html", "text/html; charset=utf-8", head_only=head_only)
@@ -1060,6 +1071,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._html_error(404, "资源未找到：%s" % name)
         if ctype is None:
             ctype = self._guess_ctype(fp)
+        if head_only:
+            size = os.path.getsize(fp)
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+            return
+        with open(fp, "rb") as f:
+            self._send(200, f.read(), ctype)
+
+    def _serve_upload(self, rel, head_only=False):
+        """服务 UPLOAD_DIR 下的上传资源（持久盘感知）。"""
+        fp = os.path.join(UPLOAD_DIR, rel)
+        if not os.path.exists(fp) or os.path.isdir(fp):
+            return self._html_error(404, "资源未找到：%s" % rel)
+        ctype = self._guess_ctype(fp)
         if head_only:
             size = os.path.getsize(fp)
             self.send_response(200)
@@ -1823,7 +1850,7 @@ class Handler(BaseHTTPRequestHandler):
             .replace(">", "&gt;").replace('"', "&quot;")
 
     def _upload_dir(self):
-        d = os.path.join(WEB_DIR, "uploads", "schemes")
+        d = os.path.join(UPLOAD_DIR, "schemes")
         os.makedirs(d, exist_ok=True)
         return d
 
@@ -2023,7 +2050,7 @@ class Handler(BaseHTTPRequestHandler):
     def _analyze_image(self, image_url, task, api_key, base_url, model):
         # 读取图片为 base64 data URL（多模态 API 通用）
         if image_url.startswith("/uploads/"):
-            path = os.path.join(WEB_DIR, image_url.lstrip("/"))
+            path = os.path.join(UPLOAD_DIR, image_url[len("/uploads/"):])
             ext = os.path.splitext(path)[1].lower()
             mime = "image/png" if ext == ".png" else "image/jpeg"
             with open(path, "rb") as f:
@@ -2144,7 +2171,7 @@ class Handler(BaseHTTPRequestHandler):
             img_url = reference_image
             if not img_url.startswith("http") and img_url.startswith("/uploads/"):
                 try:
-                    path = os.path.join(WEB_DIR, img_url.lstrip("/"))
+                    path = os.path.join(UPLOAD_DIR, img_url[len("/uploads/"):])
                     ext = os.path.splitext(path)[1].lower()
                     mime = "image/png" if ext == ".png" else "image/jpeg"
                     with open(path, "rb") as f:
