@@ -30,3 +30,6 @@ nul
 
 # Cloudflare Tunnel 二进制（部署包内下载获得，不提交）
 deploy-local/cloudflared.exe
+# 隧道/服务运行日志（运行时生成）
+deploy-local/*.log
+deploy-local/*.err

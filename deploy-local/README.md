@@ -80,10 +80,13 @@ netsh advfirewall firewall add rule name="GreenFun 8000" dir=in action=allow pro
 本项目已内置 `deploy-local/cloudflared.exe`（Windows 64 位），无需另外安装。
 
 ### 临时地址（零配置，推荐先用这个）
-1. 先确保本机 greenfun 服务已在 8000 端口运行（双击 `start.bat`）
-2. 双击 **`deploy-local/start_tunnel.bat`**
-3. 窗口会打印一个 `https://xxxx.trycloudflare.com` 地址 → 发给要访问的人（老板/自己手机），外网直接打开即可
-4. 关闭该窗口 = 立刻断开外网访问
+
+**最省事的一键方式**：直接双击 **`deploy-local/start_all.bat`** —— 它会一口气拉起「本地服务(8000) + 外网隧道」，窗口里直接打印外网地址；**按任意键即同时关闭两者**（不留孤儿进程）。
+
+如果只想单独拉隧道（服务已用 `start.bat` 在跑）：
+1. 双击 **`deploy-local/start_tunnel.bat`**
+2. 窗口会打印一个 `https://xxxx.trycloudflare.com` 地址 → 发给要访问的人（老板/自己手机），外网直接打开即可
+3. 关闭该窗口 = 立刻断开外网访问
 
 > 已真机验证：公网回打 `https://xxxx.trycloudflare.com/api/health` 返回 `{"ok":true,"stages":8}`，首页 200。
 
