@@ -48,11 +48,14 @@ if ($url) {
 }
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "按任意键停止服务并断开外网..." -ForegroundColor Cyan
-[Console]::ReadKey($true) | Out-Null
-
-Write-Host "正在停止..." -ForegroundColor Yellow
-try { if (-not $app.HasExited) { $app.Kill() } } catch {}
-try { if (-not $tunnel.HasExited) { $tunnel.Kill() } } catch {}
-Start-Sleep -Seconds 1
-Write-Host "已停止。运行日志: deploy-local\app.log / tunnel.log" -ForegroundColor Green
+# 交互模式（双击）下等待按键后关闭两者；计划任务 / 登录自启（非交互或设了 GF_NO_WAIT）下直接退出，
+# 此时 app.py / cloudflared 已由 Start-Process 独立拉起，会持续常驻。
+if ([Environment]::UserInteractive -and $env:GF_NO_WAIT -ne '1') {
+    Write-Host "按任意键停止服务并断开外网..." -ForegroundColor Cyan
+    [Console]::ReadKey($true) | Out-Null
+    Write-Host "正在停止..." -ForegroundColor Yellow
+    try { if (-not $app.HasExited) { $app.Kill() } } catch {}
+    try { if (-not $tunnel.HasExited) { $tunnel.Kill() } } catch {}
+    Start-Sleep -Seconds 1
+    Write-Host "已停止。运行日志: deploy-local\app.log / tunnel.log" -ForegroundColor Green
+}

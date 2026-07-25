@@ -119,4 +119,72 @@
       success.classList.remove('hidden');
     });
   }
+
+  // ---- 官网案例（数据驱动，卡片点击进入详情页） ----
+  const GRAD = ['g-forest', 'g-moss', 'g-sage', 'g-mint', 'g-leaf', 'g-fern', 'g-brown', 'g-olive'];
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
+  const coverAttr = (cover, idx) => cover
+    ? ' style="background-image:url(\'' + String(cover).replace(/'/g, "\\'") + '\')"'
+    : ' class="' + GRAD[idx % GRAD.length] + '"';
+
+  async function loadCases() {
+    const feature = $('#casesFeature');
+    const grid = $('#portfolioGrid');
+    if (!feature && !grid) return;
+    let cases = [];
+    try {
+      const res = await fetch('/api/cases');
+      cases = await res.json();
+    } catch (e) { console.log('cases api not ready', e); }
+    if (!Array.isArray(cases)) cases = [];
+
+    if (feature) {
+      if (cases.length === 0) {
+        feature.innerHTML = '<p class="empty-hint">案例即将上线，敬请期待。</p>';
+      } else {
+        const f = cases[0];
+        let html = '<article class="case-feature reveal" data-case-id="' + f.id + '">'
+          + '<div class="case-media"' + coverAttr(f.cover, 0) + '></div>'
+          + '<div class="case-info"><span class="case-tag">' + esc(f.category || '案例') + '</span>'
+          + '<h3>' + esc(f.title) + '</h3><p>' + esc(f.summary || '') + '</p></div></article>';
+        const stack = cases.slice(1, 3);
+        if (stack.length) {
+          html += '<div class="case-stack">';
+          stack.forEach((c, i) => {
+            html += '<article class="case-mini reveal" data-case-id="' + c.id + '">'
+              + '<div class="case-mini-media"' + coverAttr(c.cover, i + 1) + '></div>'
+              + '<div class="case-mini-info"><span class="case-tag">' + esc(c.category || '案例') + '</span><h4>' + esc(c.title) + '</h4></div></article>';
+          });
+          html += '</div>';
+        }
+        feature.innerHTML = html;
+      }
+    }
+
+    if (grid) {
+      if (cases.length === 0) {
+        grid.innerHTML = '<p class="empty-hint">案例即将上线，敬请期待。</p>';
+      } else {
+        grid.innerHTML = cases.map((c, i) =>
+          '<div class="portfolio-item reveal" data-case-id="' + c.id + '" data-cat="' + esc(String(c.category || 'other').toLowerCase()) + '">'
+          + '<div class="p-visual"' + coverAttr(c.cover, i) + '></div><h4>' + esc(c.title) + '</h4></div>'
+        ).join('');
+      }
+    }
+
+    $$('[data-case-id]').forEach(el => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => { location.href = 'case.html?id=' + el.dataset.caseId; });
+    });
+
+    if ('IntersectionObserver' in window) {
+      const io2 = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('is-visible'); io2.unobserve(e.target); } });
+      }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+      $$('.reveal').forEach(el => io2.observe(el));
+    } else {
+      $$('.reveal').forEach(el => el.classList.add('is-visible'));
+    }
+  }
+  loadCases();
 })();

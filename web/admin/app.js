@@ -212,6 +212,7 @@ async function switchView(v) {
   if (v === 'kanban') return renderKanban();
   if (v === 'quote') return renderQuote();
   if (v === 'scheme') return renderScheme();
+  if (v === 'cases') return renderCases();
   if (v === 'contacts') return renderContacts();
   if (v === 'forms') return renderForms();
   if (v === 'stats') return renderStats();
@@ -1618,6 +1619,122 @@ function openRechargeDialog(userMap, prices) {
     toast(`已调整 ${amount} 积分，当前余额 ${r.balance}`);
     closeDrawer(); renderCredits();
   });
+}
+
+// ---------------- 官网案例管理 ----------------
+async function renderCases() {
+  const cases = await api('GET', '/cases/all');
+  const list = Array.isArray(cases) ? cases : [];
+  const rows = list.map(c => `
+    <tr>
+      <td><img src="${esc(c.cover || '')}" onerror="this.style.visibility='hidden'" style="width:64px;height:44px;object-fit:cover;border-radius:6px"></td>
+      <td>${esc(c.title)}</td>
+      <td>${esc(c.category || '-')}</td>
+      <td>${c.sort != null ? c.sort : 0}</td>
+      <td><span class="status-pill ${c.status == 1 ? 'st-deal' : 'st-lead'}">${c.status == 1 ? '上架' : '下架'}</span></td>
+      <td>
+        <button class="btn sm ghost" data-edit="${c.id}">编辑</button>
+        <button class="btn sm ghost" data-del="${c.id}">删除</button>
+      </td>
+    </tr>
+  `).join('');
+  $('#app').innerHTML = `
+    <div class="toolbar">
+      <h3 style="font-family:var(--font-serif);font-size:18px;color:var(--green-900)">官网案例管理</h3>
+      <span class="spacer"></span>
+      <button class="btn" id="newCaseBtn">+ 新建案例</button>
+    </div>
+    <table class="price-table">
+      <thead><tr><th>封面</th><th>标题</th><th>分类</th><th>排序</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px">暂无案例，点击右上角新建</td></tr>'}</tbody>
+    </table>`;
+  $('#newCaseBtn').addEventListener('click', () => openCaseEditor(null));
+  $$('#app [data-edit]').forEach(b => b.addEventListener('click', () => openCaseEditor(+b.dataset.edit)));
+  $$('#app [data-del]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('确认删除该案例？此操作不可撤销。')) return;
+    const r = await api('DELETE', '/cases/' + b.dataset.del);
+    if (r.error) return toast(r.error);
+    toast('已删除'); renderCases();
+  }));
+}
+
+async function openCaseEditor(id) {
+  let c = { title: '', category: 'commercial', summary: '', detail: '', cover: '', gallery: [], sort: 0, status: 1 };
+  if (id) {
+    const d = await api('GET', '/cases/' + id);
+    if (d.error) return toast('案例不存在');
+    c = d; if (!Array.isArray(c.gallery)) c.gallery = [];
+  }
+  state.caseDraft = { cover: c.cover || '', gallery: (c.gallery || []).slice() };
+  openDrawer();
+  $('#drawerPanel').innerHTML = `
+    <div class="dp-head"><h2>${id ? '编辑案例' : '新建案例'}</h2><button class="close" id="dClose">×</button></div>
+    <div class="dp-body">
+      <div class="field full"><label>标题 *</label><input id="csTitle" value="${esc(c.title)}" placeholder="如：雁荡山游客中心绿植设计"></div>
+      <div class="field"><label>分类</label><select id="csCat">
+        ${[['commercial','商业空间'],['home','家居空间'],['event','活动案例'],['other','其他']].map(o=>`<option value="${o[0]}" ${c.category===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>排序（越小越靠前）</label><input id="csSort" type="number" value="${c.sort != null ? c.sort : 0}"></div>
+      <div class="field"><label>状态</label><select id="csStatus">
+        <option value="1" ${c.status==1?'selected':''}>上架</option>
+        <option value="0" ${c.status==0?'selected':''}>下架</option>
+      </select></div>
+      <div class="field full"><label>摘要（列表/卡片展示）</label><textarea id="csSummary" rows="2" placeholder="一句话简介">${esc(c.summary)}</textarea></div>
+      <div class="field full"><label>详情正文（支持简单 HTML）</label><textarea id="csDetail" rows="8" placeholder="<p>项目背景...</p> 或直接写文字">${esc(c.detail)}</textarea></div>
+      <div class="field full"><label>封面图</label>
+        <input type="file" id="csCover" accept="image/*">
+        <div id="csCoverBox" style="margin-top:8px">${c.cover ? `<img src="${esc(c.cover)}" style="max-width:200px;border-radius:8px">` : '<span style="color:var(--muted);font-size:13px">未上传</span>'}</div>
+      </div>
+      <div class="field full"><label>图集（可多选）</label>
+        <input type="file" id="csGallery" accept="image/*" multiple>
+        <div id="csGalleryBox" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${(c.gallery||[]).map(g=>`<img src="${esc(g)}" style="width:90px;height:64px;object-fit:cover;border-radius:6px">`).join('')}</div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn" id="csSave">保存案例</button>
+        <button class="btn ghost" id="csCancel">取消</button>
+      </div>
+    </div>`;
+  $('#dClose').addEventListener('click', closeDrawer);
+  $('#csCancel').addEventListener('click', closeDrawer);
+  $('#csCover').addEventListener('change', async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const url = await uploadCaseImage(f);
+    if (url) { state.caseDraft.cover = url; $('#csCoverBox').innerHTML = `<img src="${esc(url)}" style="max-width:200px;border-radius:8px">`; toast('封面已上传'); }
+  });
+  $('#csGallery').addEventListener('change', async e => {
+    const files = [...e.target.files]; if (!files.length) return;
+    for (const f of files) { const url = await uploadCaseImage(f); if (url) state.caseDraft.gallery.push(url); }
+    $('#csGalleryBox').innerHTML = state.caseDraft.gallery.map(g=>`<img src="${esc(g)}" style="width:90px;height:64px;object-fit:cover;border-radius:6px">`).join('');
+    toast('图集已添加 ' + state.caseDraft.gallery.length + ' 张');
+  });
+  $('#csSave').addEventListener('click', async () => {
+    const title = $('#csTitle').value.trim();
+    if (!title) return toast('请填写标题');
+    const body = {
+      title,
+      category: $('#csCat').value,
+      summary: $('#csSummary').value,
+      detail: $('#csDetail').value,
+      cover: state.caseDraft.cover || '',
+      gallery: state.caseDraft.gallery || [],
+      sort: +($('#csSort').value || 0),
+      status: +($('#csStatus').value || 1),
+    };
+    let r;
+    if (id) r = await api('PUT', '/cases/' + id, body);
+    else r = await api('POST', '/cases', body);
+    if (r.error) return toast(r.error);
+    toast('已保存'); closeDrawer(); renderCases();
+  });
+}
+
+async function uploadCaseImage(file) {
+  try {
+    const dataUrl = await readFileAsDataURL(file);
+    const r = await api('POST', '/scheme/upload', { data: dataUrl, folder: 'cases' });
+    if (r.error) throw new Error(r.error);
+    return r.url;
+  } catch (err) { toast('上传失败：' + err.message); return null; }
 }
 
 init();

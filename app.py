@@ -479,6 +479,21 @@ def init_db():
         created_at TEXT,
         updated_at TEXT
     )""")
+    # 官网案例库（管理员后台编辑，官网卡片点击进入详情）
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS cases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        category TEXT,
+        summary TEXT,
+        cover TEXT,
+        detail TEXT,
+        gallery TEXT,
+        sort INTEGER DEFAULT 0,
+        status INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )""")
     # 积分账户与流水
     c.execute("""
     CREATE TABLE IF NOT EXISTS credits (
@@ -497,8 +512,9 @@ def init_db():
         created_at TEXT
     )""")
     conn.commit()
-    # 上传目录（现场照片 / AI 效果图），可指向持久盘 UPLOAD_DIR
+    # 上传目录（现场照片 / AI 效果图 / 官网案例），可指向持久盘 UPLOAD_DIR
     os.makedirs(os.path.join(UPLOAD_DIR, "schemes"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "cases"), exist_ok=True)
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -668,6 +684,15 @@ def to_float(v, default=0.0):
         if v in (None, ""):
             return default
         return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def to_int(v, default=0):
+    try:
+        if v in (None, ""):
+            return default
+        return int(v)
     except (TypeError, ValueError):
         return default
 
@@ -1047,6 +1072,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("app.js", "text/javascript; charset=utf-8", head_only=head_only)
         if path == "/styles.css":
             return self._static("styles.css", "text/css; charset=utf-8", head_only=head_only)
+        if path == "/case.html":
+            return self._static("case.html", "text/html; charset=utf-8", head_only=head_only)
+        if path == "/case.js":
+            return self._static("case.js", "text/javascript; charset=utf-8", head_only=head_only)
         if path.startswith("/api/"):
             if head_only:
                 return self._send(200, b"", "application/json")
@@ -1125,6 +1154,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/schemes/") and path.endswith("/print"):
             return self._scheme_print(path)
 
+        # 官网案例（公开，无需登录）：列表 + 单条详情
+        if path == "/api/cases":
+            return self._json(self._list_cases(public_only=True))
+        if path.startswith("/api/cases/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
+            return self._json(self._case_detail(int(path.split("/")[3])))
+
         u = self._need()
         if not u:
             return
@@ -1172,6 +1207,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._list_schemes())
         if path.startswith("/api/schemes/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
             return self._json(self._scheme_detail(int(path.split("/")[3])))
+        # 官网案例（后台管理列表：含未上架）
+        if path == "/api/cases/all":
+            if u["role"] not in ("admin", "manager", "designer"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._list_cases(public_only=False))
         if path.startswith("/api/customers/"):
             parts = path.split("/")
             cid = parts[3] if len(parts) > 3 else None
@@ -1307,6 +1347,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(self._delete_scheme(sid))
             if len(sp) == 5 and sp[3].isdigit() and sp[4] == "quote" and method == "POST":
                 return self._json(self._scheme_to_quote(int(sp[3]), u), 201)
+
+        # 官网案例（管理员/店长/设计师可管理）
+        if path == "/api/cases" and method == "POST":
+            if u["role"] not in ("admin", "manager", "designer"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._create_case(body, u), 201)
+        if path.startswith("/api/cases/"):
+            cp = path.split("/")
+            if len(cp) == 4 and cp[3].isdigit():
+                cid = int(cp[3])
+                if u["role"] not in ("admin", "manager", "designer"):
+                    return self._json({"error": "无权限"}, 403)
+                if method == "PUT":
+                    return self._json(self._update_case(cid, body))
+                if method == "DELETE":
+                    return self._json(self._delete_case(cid))
 
         return self._json({"error": "unknown"}, 404)
 
@@ -1855,6 +1911,9 @@ class Handler(BaseHTTPRequestHandler):
         return d
 
     def _scheme_upload(self, body):
+        folder = (body.get("folder") or "schemes").strip() or "schemes"
+        if folder not in ("schemes", "cases"):
+            folder = "schemes"
         data = body.get("data", "")
         if "," in data:
             header, b64 = data.split(",", 1)
@@ -1871,9 +1930,11 @@ class Handler(BaseHTTPRequestHandler):
         if len(raw) > 12 * 1024 * 1024:
             return {"error": "文件过大（上限 12MB）"}
         name = secrets.token_hex(12) + "." + ext
-        with open(os.path.join(self._upload_dir(), name), "wb") as f:
+        d = os.path.join(UPLOAD_DIR, folder)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, name), "wb") as f:
             f.write(raw)
-        return {"url": "/uploads/schemes/" + name}
+        return {"url": "/uploads/" + folder + "/" + name}
 
     def _scheme_generate(self, body, u):
         prompt = (body.get("prompt") or "").strip()
@@ -2289,6 +2350,75 @@ class Handler(BaseHTTPRequestHandler):
     def _delete_scheme(self, sid):
         conn = get_db()
         conn.execute("DELETE FROM schemes WHERE id=?", (sid,))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+
+    # ---- 官网案例 ----
+    def _list_cases(self, public_only=False):
+        conn = get_db()
+        if public_only:
+            rows = conn.execute(
+                "SELECT id, title, category, summary, cover, sort FROM cases WHERE status=1 ORDER BY sort ASC, id DESC").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, title, category, summary, cover, sort, status, created_at FROM cases ORDER BY sort ASC, id DESC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def _case_detail(self, cid):
+        conn = get_db()
+        r = conn.execute("SELECT * FROM cases WHERE id=?", (cid,)).fetchone()
+        conn.close()
+        if not r:
+            return {"error": "not found"}
+        d = dict(r)
+        try:
+            d["gallery"] = json.loads(d.get("gallery") or "[]")
+        except Exception:
+            d["gallery"] = []
+        return d
+
+    def _create_case(self, body, u):
+        t = now_str()
+        conn = get_db()
+        cur = conn.execute(
+            """INSERT INTO cases (title, category, summary, cover, detail, gallery, sort, status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (body.get("title", "").strip(), body.get("category", ""),
+             body.get("summary", ""), body.get("cover", ""),
+             body.get("detail", ""), json.dumps(body.get("gallery", []), ensure_ascii=False),
+             to_int(body.get("sort", 0)), to_int(body.get("status", 1)), t, t))
+        cid = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return {"id": cid, **self._case_detail(cid)}
+
+    def _update_case(self, cid, body):
+        t = now_str()
+        conn = get_db()
+        r = conn.execute("SELECT * FROM cases WHERE id=?", (cid,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "not found"}
+        gallery = body.get("gallery")
+        if gallery is None:
+            gallery = json.loads(r["gallery"] or "[]")
+        elif not isinstance(gallery, list):
+            gallery = []
+        conn.execute(
+            """UPDATE cases SET title=?, category=?, summary=?, cover=?, detail=?, gallery=?, sort=?, status=?, updated_at=? WHERE id=?""",
+            (body.get("title", r["title"]).strip(), body.get("category", r["category"]),
+             body.get("summary", r["summary"]), body.get("cover", r["cover"]),
+             body.get("detail", r["detail"]), json.dumps(gallery, ensure_ascii=False),
+             to_int(body.get("sort", r["sort"])), to_int(body.get("status", r["status"])), t, cid))
+        conn.commit()
+        conn.close()
+        return self._case_detail(cid)
+
+    def _delete_case(self, cid):
+        conn = get_db()
+        conn.execute("DELETE FROM cases WHERE id=?", (cid,))
         conn.commit()
         conn.close()
         return {"ok": True}

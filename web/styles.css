@@ -214,7 +214,7 @@ ul { list-style: none; }
 .cases-layout { display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--gap); }
 .case-feature { position: relative; border-radius: var(--radius); overflow: hidden; min-height: 620px; box-shadow: var(--shadow); cursor: pointer; transition: transform .3s, box-shadow .3s; }
 .case-feature:hover { transform: translateY(-6px); box-shadow: var(--shadow-lg); }
-.case-media { position: absolute; inset: 0; }
+.case-media { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .case-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 38px; color: #fff; background: linear-gradient(transparent, rgba(15,41,24,.88)); }
 .case-tag { display: inline-block; font-size: 11px; letter-spacing: 1px; background: rgba(255,255,255,.22); padding: 4px 12px; border-radius: 999px; margin-bottom: 12px; }
 .case-info h3 { font-family: var(--font-serif); font-size: 26px; margin-bottom: 8px; }
@@ -222,9 +222,10 @@ ul { list-style: none; }
 .case-stack { display: flex; flex-direction: column; gap: var(--gap); }
 .case-mini { position: relative; flex: 1; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); cursor: pointer; transition: transform .3s, box-shadow .3s; min-height: 296px; }
 .case-mini:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
-.case-mini-media { position: absolute; inset: 0; }
+.case-mini-media { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .case-mini-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 24px; color: #fff; background: linear-gradient(transparent, rgba(15,41,24,.85)); }
 .case-mini-info h4 { font-family: var(--font-serif); font-size: 19px; margin-top: 8px; }
+.empty-hint { color: var(--green-700); opacity: .7; font-size: 15px; padding: 40px 0; text-align: center; grid-column: 1 / -1; }
 
 /* ---------- 客户心声 ---------- */
 .voices { background: var(--green-50); }
@@ -319,7 +320,7 @@ ul { list-style: none; }
 .portfolio-item { cursor: pointer; transition: transform .25s; }
 .portfolio-item:hover { transform: translateY(-5px); }
 .portfolio-item.hidden { display: none; }
-.p-visual { height: 220px; border-radius: var(--radius-sm); margin-bottom: 12px; }
+.p-visual { height: 220px; border-radius: var(--radius-sm); margin-bottom: 12px; background-size: cover; background-position: center; }
 .portfolio-item h4 { font-size: 15px; color: var(--green-800); }
 
 /* ---------- 联系 ---------- */
