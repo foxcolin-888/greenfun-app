@@ -74,17 +74,49 @@ netsh advfirewall firewall add rule name="GreenFun 8000" dir=in action=allow pro
 3. 管理员起始积分默认 1000（已在建库时种子）。如需更多，在「客户/积分」里充值
 4. **配置只做一次**，数据写进本地 `greenfun.db`，永久保留，不再清零
 
-## 七、远程访问（可选，不在办公室也能用）
+## 七、远程访问（接出外网，不在办公室也能用）
 
-若需要从外网（家里/外地）访问，最简单是用 Cloudflare 隧道（免费、不用改路由器、不用公网 IP）：
+用 **Cloudflare Tunnel（cloudflared）**：免费、不用公网 IP、不用改路由器、自带 HTTPS 加密。
+本项目已内置 `deploy-local/cloudflared.exe`（Windows 64 位），无需另外安装。
 
-1. 下载 `cloudflared`（https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/）
-2. 在已启动服务的前提下，另开一个 CMD：
+### 临时地址（零配置，推荐先用这个）
+1. 先确保本机 greenfun 服务已在 8000 端口运行（双击 `start.bat`）
+2. 双击 **`deploy-local/start_tunnel.bat`**
+3. 窗口会打印一个 `https://xxxx.trycloudflare.com` 地址 → 发给要访问的人（老板/自己手机），外网直接打开即可
+4. 关闭该窗口 = 立刻断开外网访问
+
+> 已真机验证：公网回打 `https://xxxx.trycloudflare.com/api/health` 返回 `{"ok":true,"stages":8}`，首页 200。
+
+### 固定地址（长期在外用，需 Cloudflare 账号）
+临时地址每次重开都变。若要固定不变，按下面做（一次性，约 10 分钟）：
+
+1. 注册 Cloudflare 账号（免费）：https://dash.cloudflare.com/sign-up
+2. 准备一个域名（你已有的，或在 Cloudflare 用免费二级域 `*.cfargotunnel.com` 也可）
+3. 在 `deploy-local/` 里新建 `config.yml`：
+   ```yaml
+   tunnel: greenfun
+   credentials-file: C:\Users\你的用户名\ .cloudflared\greenfun.json
+   ingress:
+     - hostname: greenfun.你的域名.com
+       service: http://localhost:8000
+     - service: http_status:404
    ```
-   cloudflared tunnel --url http://localhost:8000
+4. 登录并建隧道（CMD 执行，按提示浏览器授权）：
    ```
-3. 它会给出一个 `https://xxxx.trycloudflare.com` 临时地址，外网直接打开即可
-   （如需固定地址，注册 Cloudflare 账号建永久隧道，略复杂，按需再做）
+   cloudflared.exe login
+   cloudflared.exe tunnel create greenfun
+   cloudflared.exe tunnel route dns greenfun greenfun.你的域名.com
+   ```
+5. 以后启动固定隧道：
+   ```
+   cloudflared.exe tunnel run greenfun
+   ```
+   之后 `https://greenfun.你的域名.com` 就是**固定不变**的外网地址。
+
+### ⚠️ 安全提醒
+- 外网地址任何人知道就能打开登录页，**务必把后台密码改强**（默认 `lvquguanliyuan/123456` 仅内网用，外网暴露必须改）。
+- 临时隧道地址是随机长串、难猜，相对安全；不用时关掉窗口即可。
+- 不要在公网地址上明文传极度敏感数据；登录走 HTTPS，凭证已加密。
 
 ## 八、数据备份（重要）
 

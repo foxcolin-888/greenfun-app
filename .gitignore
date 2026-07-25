@@ -27,3 +27,6 @@ nul
 
 # 本地测试临时目录
 .tmp/
+
+# Cloudflare Tunnel 二进制（部署包内下载获得，不提交）
+deploy-local/cloudflared.exe
