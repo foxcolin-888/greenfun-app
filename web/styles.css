@@ -55,6 +55,26 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .btn-outline-light:hover { background: rgba(255,255,255,.1); }
 .btn-block { width: 100%; }
 
+/* 漂浮叶片动效 */
+.leaf-float-layer {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden;
+}
+.leaf-float-layer .leaf {
+  position: absolute; top: -40px; opacity: 0;
+  animation: leafDrift linear infinite;
+  will-change: transform, opacity;
+}
+.leaf-float-layer .leaf svg { display: block; width: 100%; height: 100%; }
+@keyframes leafDrift {
+  0%   { transform: translateY(-40px) translateX(0) rotate(0deg);     opacity: 0; }
+  8%   { opacity: var(--leaf-opacity, .45); }
+  92%  { opacity: var(--leaf-opacity, .45); }
+  100% { transform: translateY(105vh) translateX(var(--drift-x, 30px)) rotate(var(--spin, 360deg)); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaf-float-layer { display: none; }
+}
+
 /* Navbar */
 .navbar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
