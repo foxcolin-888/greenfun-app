@@ -1879,16 +1879,38 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             msg = f"HTTP {he.code}"
+            # 尽量提取上游真实错误信息（APIYI 常把额度不足也返回 403，需靠报文区分）
+            upstream = detail
+            try:
+                _j = json.loads(detail)
+                if isinstance(_j, dict):
+                    _e = _j.get("error")
+                    if isinstance(_e, dict) and _e.get("message"):
+                        upstream = _e["message"]
+                    elif isinstance(_e, str):
+                        upstream = _e
+                    elif _j.get("message"):
+                        upstream = _j["message"]
+            except Exception:
+                pass
+            low = (detail + " " + upstream).lower()
             if he.code == 401:
                 msg += "：API Key 无效或未授权（请检查 Key 是否正确、是否已开通该模型、或 Key 是否已被禁用）"
             elif he.code == 403:
-                msg += "：没有权限调用该模型，请在控制台确认已开通并授权"
+                if any(k in low for k in ("quota", "余额", "额度", "balance", "insufficient", "preconsumed", "pre_consumed")):
+                    msg += "：上游账户额度/余额不足（请在 APIYI 控制台充值后再试）"
+                elif any(k in low for k in ("permission", "权限", "开通", "authorize", "unauthorized", "forbidden")):
+                    msg += "：没有权限调用该模型，请在控制台确认已开通并授权"
+                else:
+                    msg += "：调用被上游拒绝（请检查模型名 / Key / 账户状态）"
             elif he.code == 429:
-                msg += "：请求过于频繁或余额不足"
+                msg += "：请求过于频繁，请稍后重试"
             elif he.code >= 500:
                 msg += "：模型服务暂时不可用，请稍后重试"
-            if detail:
-                msg += f"；详情：{detail}"
+            if upstream and upstream != detail:
+                msg += f"；上游：{upstream[:200]}"
+            elif detail:
+                msg += f"；详情：{detail[:200]}"
             return {"error": "生图失败：" + msg}
         except Exception as e:
             self._credit_refund(u["username"], cost, "scheme_generate", scheme_id)
