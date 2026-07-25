@@ -514,6 +514,12 @@ def init_db():
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", (k, v))
     conn.commit()
 
+    # 用环境变量持久化基础设施类设置（如生图 API Key）。
+    # 免费版 Render 磁盘随重建重置，但环境变量保留在服务配置中；
+    # 把 Key 等敏感配置放到环境变量后，无需每次重建后在后台重填。
+    _seed_env_settings(conn)
+    conn.commit()
+
     # 表结构迁移：兼容早期数据库，补加新列
     _migrate_schema(conn)
     conn.commit()
@@ -525,6 +531,30 @@ def init_db():
     _migrate_payment_methods(conn)
 
     conn.close()
+
+
+def _seed_env_settings(conn):
+    """用环境变量为基础设施类设置提供持久化默认值（如生图 API Key）。
+    免费版 Render 磁盘会随重建重置，但环境变量保留在服务配置里，
+    因此把 Key 等配置放到环境变量即可跨重建持久化，不必每次在后台重填。
+    规则：仅当对应环境变量存在且非空时才写入（且会覆盖 DB 中同名值）；
+    其余未设环境变量的设置仍走 DB / 默认值。密钥不写入代码或数据库文件，
+    而是从运行环境注入，避免泄露。"""
+    env_map = {
+        "GREENFUN_IMG_GEN_PROVIDER": "img_gen_provider",
+        "GREENFUN_IMG_GEN_API_KEY": "img_gen_api_key",
+        "GREENFUN_IMG_GEN_MODEL": "img_gen_model",
+        "GREENFUN_IMG_GEN_BASE_URL": "img_gen_base_url",
+        "GREENFUN_IMG_GEN_SIZE": "img_gen_size",
+        "GREENFUN_IMG_ANALYSIS_MODEL": "img_analysis_model",
+    }
+    for env_key, setting_key in env_map.items():
+        val = os.environ.get(env_key)
+        if val is None or val == "":
+            continue
+        cur = conn.execute("UPDATE settings SET value=? WHERE key=?", (val, setting_key))
+        if cur.rowcount == 0:
+            conn.execute("INSERT INTO settings (key, value) VALUES (?,?)", (setting_key, val))
 
 
 def _migrate_admin(conn):

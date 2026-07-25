@@ -11,6 +11,19 @@
 #   2) 为该服务添加一个 Disk（挂载路径 /data，大小 1GB）；
 #   3) 新增环境变量 DB_PATH=/data/greenfun.db（app.py 已支持，无需改代码）。
 #   这样数据库就持久保存，重启也不会丢。
+#
+# 生图 API Key 等敏感配置持久化（免费版也适用，推荐）：
+#   免费版磁盘会随重建重置，导致后台填写的 API Key 丢失。
+#   把以下环境变量配置在 Render 控制台 → 本服务 → Environment 中，
+#   app.py 启动时会自动把这些值写入系统设置，跨重建持久保留，且密钥不进代码库。
+#   配置一次即可，无需每次重建后在后台重填：
+#     GREENFUN_IMG_GEN_PROVIDER   = openai            # 接 APIYI / 豆包 / 硅基等 OpenAI 兼容渠道时填 openai
+#     GREENFUN_IMG_GEN_API_KEY    = sk-xxxxxxxx       # 平台 API Key（如 APIYI 的 sk-...）
+#     GREENFUN_IMG_GEN_BASE_URL   = https://api.apiyi.com/v1
+#     GREENFUN_IMG_GEN_MODEL      = doubao-seedream-5-0-260128   # 生图模型名
+#     GREENFUN_IMG_GEN_SIZE       = 2048x2048         # 可选，留空则沿用默认 1024x1024
+#     GREENFUN_IMG_ANALYSIS_MODEL = gpt-4o-mini       # 多模态分析（设计理念/物料识别）模型
+#   注：在 Environment 中新增变量保存后，Render 会自动触发一次重建使配置生效。
 services:
   - type: web
     name: greenfun
