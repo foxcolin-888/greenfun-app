@@ -1976,7 +1976,8 @@ class Handler(BaseHTTPRequestHandler):
         quality = (cfg.get("quality") or s.get("img_gen_quality") or "standard").strip() or "standard"
         watermark = str(cfg.get("watermark", s.get("img_gen_watermark") or "0")).strip()
         size = cfg.get("size") or s.get("img_gen_size") or "%dx%d" % (w, h)
-        payload = {"model": model, "prompt": prompt, "n": n, "size": size, "response_format": "b64_json"}
+        payload = {"model": model, "prompt": prompt, "n": n, "size": size}
+        # gpt-image-1 / gpt_image_1 等部分模型不支持 response_format 参数，默认返回 url 也会兼容下载
         # OpenAI/DALL-E 支持 quality；豆包 Seedream 文档未明确支持 quality，避免传非标准值
         if quality in ("standard", "hd") and "doubao" not in model.lower():
             payload["quality"] = quality
