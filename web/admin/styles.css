@@ -228,3 +228,25 @@ button{font-family:inherit;cursor:pointer}
   .topbar{overflow-x:auto;gap:12px;padding:10px 14px}
   .brand-sub{display:none}
 }
+
+/* ---------------- 方案设计模块 ---------------- */
+.scheme-thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.scheme-thumbs .empty{padding:18px;flex:1}
+.thumb{position:relative;width:130px;height:100px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--green-50);box-shadow:var(--shadow)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.thumb .x:hover{background:var(--red-600,#c0392b)}
+.scheme-prompt,.scheme-concept{width:100%;border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:13px;font-family:inherit;outline:none;resize:vertical;background:#fff}
+.scheme-prompt{min-height:72px}
+.scheme-concept{min-height:120px;line-height:1.8}
+.scheme-prompt:focus,.scheme-concept:focus{border-color:var(--green-400);box-shadow:0 0 0 3px var(--green-50)}
+.scheme-items{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-top:4px}
+.scheme-items th{background:var(--green-50);color:var(--green-900);font-size:12px;font-weight:700;padding:8px 9px;text-align:left}
+.scheme-items td{padding:5px 6px;border-top:1px solid var(--border)}
+.scheme-items input{border:1px solid var(--border);border-radius:7px;padding:6px 8px;font-size:13px;width:100%;outline:none}
+.scheme-items input:focus{border-color:var(--green-400)}
+.btn.danger{background:var(--red-600,#c0392b);color:#fff;border-color:var(--red-600,#c0392b)}
+.btn.danger:hover{filter:brightness(.94)}
+.q-del{border:0;background:transparent;color:var(--muted);font-size:17px;cursor:pointer;line-height:1}
+.q-del:hover{color:var(--red-600,#c0392b)}
+

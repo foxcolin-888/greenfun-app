@@ -19,6 +19,8 @@ const state = {
   activeFormFile: null,
   // 报价台
   quote: { customerId: '', items: [], params: {}, editing: null },
+  // 方案设计
+  scheme: null,
   settings: null,
   categories: [],
   prices: [],
@@ -108,6 +110,7 @@ async function switchView(v) {
   if (v === 'customers') return renderCustomers();
   if (v === 'kanban') return renderKanban();
   if (v === 'quote') return renderQuote();
+  if (v === 'scheme') return renderScheme();
   if (v === 'contacts') return renderContacts();
   if (v === 'forms') return renderForms();
   if (v === 'stats') return renderStats();
@@ -910,6 +913,20 @@ async function renderSettings() {
         <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="pShowCost" ${s.print_show_cost==='1'?'checked':''}> 内部明细显示成本价/毛利率（给客户打印版始终隐藏）</label></div>
         <div class="pfield"><label>备注说明</label><textarea id="pNote" class="wfull" rows="3" placeholder="报价有效期、不含项等">${esc(s.print_note)}</textarea></div>
       </div>
+      <div class="section">
+        <h3>④ 生图模型（AI 效果图）</h3>
+        <div class="hint">默认 Pollinations 免费免 Key，开箱即用；如需更高质量可切换到 OpenAI 兼容接口（通义万相 / 智谱 / 火山等），填入对应 API Key 与 Base URL。</div>
+        <div class="pfield"><label>供应商</label><select id="gProvider" class="wfull">
+          <option value="pollinations" ${s.img_gen_provider === 'pollinations' ? 'selected' : ''}>Pollinations（免费 · 免 Key）</option>
+          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（通义万相 / 智谱 / 火山等）</option>
+        </select></div>
+        <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="仅 OpenAI 兼容模式需要"></div>
+        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / wanx / cogview"></div>
+        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="如 https://api.openai.com/v1"></div>
+        <div class="pfield"><label>尺寸</label><select id="gSize" class="wfull">
+          ${['1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', '512x512'].map(o => `<option ${s.img_gen_size === o ? 'selected' : ''}>${o}</option>`).join('')}
+        </select></div>
+      </div>
     </div>
     <div style="margin:14px 0 40px"><button class="btn" id="sSave">💾 保存系统设置</button></div>`;
 
@@ -937,11 +954,269 @@ async function renderSettings() {
       print_footer: $('#pFooter').value,
       print_show_cost: $('#pShowCost').checked ? '1' : '0',
       print_note: $('#pNote').value,
+      img_gen_provider: $('#gProvider').value,
+      img_gen_api_key: $('#gKey').value,
+      img_gen_model: $('#gModel').value,
+      img_gen_base_url: $('#gBase').value,
+      img_gen_size: $('#gSize').value,
     };
     await api('PUT', '/settings', body);
     state.settings = null;
     toast('系统设置已保存');
   });
+}
+
+// ---------------- 方案设计 ----------------
+async function renderScheme() {
+  const list = await api('GET', '/schemes');
+  const app = $('#app');
+  app.innerHTML = `
+    <div class="toolbar">
+      <h3 style="font-family:var(--font-serif);font-size:18px;color:var(--green-900)">方案设计</h3>
+      <span class="spacer"></span>
+      <button class="btn sm" id="scNew">+ 新建方案</button>
+    </div>
+    <table class="price-table">
+      <thead><tr><th>客户</th><th>项目</th><th>空间</th><th>状态</th><th>关联报价单</th><th>创建时间</th><th></th></tr></thead>
+      <tbody>
+        ${list.length ? list.map(s => `
+          <tr data-id="${s.id}">
+            <td><b>${esc(s.customer || '未命名')}</b></td>
+            <td>${esc(s.project_name || '—')}</td>
+            <td>${esc(s.room_type || '—')}</td>
+            <td><span class="status-pill ${s.status === '已转报价' || s.status === '已确认' ? 'st-deal' : 'st-lead'}">${esc(s.status || '草稿')}</span></td>
+            <td>${s.quote_id ? ('已生成 #' + s.quote_id) : '—'}</td>
+            <td>${esc((s.created_at || '').slice(0, 10))}</td>
+            <td><button class="btn sm ghost" data-open="${s.id}">打开</button></td>
+          </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:40px">还没有方案，点右上角「+ 新建方案」</td></tr>'}
+      </tbody>
+    </table>`;
+  $('#scNew').addEventListener('click', () => openSchemeEditor(null));
+  $$('[data-open]').forEach(b => b.addEventListener('click', async () => {
+    const d = await api('GET', '/schemes/' + b.dataset.open);
+    if (d.error) return toast('方案不存在');
+    openSchemeEditor(d);
+  }));
+}
+
+function openSchemeEditor(raw) {
+  const s = raw || {};
+  state.scheme = {
+    id: s.id || null,
+    customer_id: s.customer_id || null,
+    customer: s.customer || '',
+    project_name: s.project_name || '',
+    room_type: s.room_type || '',
+    requirements: s.requirements || '',
+    concept: s.concept || '',
+    photos: Array.isArray(s.photos) ? s.photos.slice() : [],
+    images: Array.isArray(s.images) ? s.images.slice() : [],
+    items: Array.isArray(s.items) ? s.items.slice() : [],
+    status: s.status || '草稿',
+    quote_id: s.quote_id || null,
+  };
+  openDrawer();
+  renderSchemeEditor();
+}
+
+function renderSchemeEditor() {
+  const s = state.scheme;
+  const panel = $('#drawerPanel');
+  panel.innerHTML = `
+    <div class="dp-head">
+      <h2>${s.id ? '编辑方案 #' + s.id : '新建方案'}</h2>
+      <button class="close" id="dClose">×</button>
+    </div>
+    <div class="dp-body scheme-editor">
+      <div class="section">
+        <h3>① 基本信息</h3>
+        <div class="grid">
+          <div class="field"><label>关联客户</label><select id="scCustomer">
+            <option value="">— 不关联 —</option>
+            ${state.customers.map(c => `<option value="${c.id}" ${s.customer_id == c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          </select></div>
+          <div class="field"><label>客户名称 *</label><input id="scCustomerName" value="${esc(s.customer)}" placeholder="如 王女士"></div>
+          <div class="field"><label>项目名称 *</label><input id="scProject" value="${esc(s.project_name)}" placeholder="如 锦绣园7栋阳台"></div>
+          <div class="field"><label>空间类型</label><input id="scRoom" value="${esc(s.room_type)}" placeholder="如 南向阳台"></div>
+          <div class="field"><label>状态</label><select id="scStatus">${['草稿', '待确认', '已确认', '已转报价'].map(o => `<option ${s.status === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>② 现场照片</h3>
+        <div class="hint">上传项目现场照片，用于方案排版与给客户展示。</div>
+        <label class="btn sm ghost file-btn">⬆ 上传照片<input type="file" id="scPhoto" accept="image/*" multiple hidden></label>
+        <div class="scheme-thumbs" id="scPhotoThumbs">${schemeThumbs(s.photos)}</div>
+      </div>
+
+      <div class="section">
+        <h3>③ AI 生成效果图</h3>
+        <div class="hint">根据需求描述生成效果图（内置免费模型，可在系统设置切换付费模型）。生成后可多次生成叠加。</div>
+        <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
+        <div class="q-paste-actions">
+          <select id="scN" class="wfull" style="max-width:120px"><option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option></select>
+          <button class="btn sm" id="scGen">🎨 生成效果图</button>
+        </div>
+        <div class="scheme-thumbs" id="scImgThumbs">${schemeThumbs(s.images)}</div>
+        <div id="scGenMsg" class="q-warn" style="display:none"></div>
+      </div>
+
+      <div class="section">
+        <h3>④ 设计理念</h3>
+        <textarea id="scConcept" class="scheme-concept" placeholder="设计思路、植物选择逻辑、色彩与层次、养护要点...">${esc(s.concept)}</textarea>
+      </div>
+
+      <div class="section">
+        <h3>⑤ 植物与物料清单</h3>
+        <div id="scItems"></div>
+        <button class="btn sm ghost" id="scAddItem" style="margin-top:8px">＋ 添加一行</button>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <button class="btn" id="scSave">💾 保存方案</button>
+        ${s.id ? `<button class="btn amber" id="scPrint">🖨 一键排版 / 导出 PDF</button>
+        <button class="btn ghost" id="scQuote">➡ 生成报价单</button>
+        <button class="btn danger" id="scDel">删除</button>` : ''}
+      </div>
+    </div>`;
+  $('#dClose').addEventListener('click', closeDrawer);
+  bindThumbRemove('photo'); bindThumbRemove('image');
+  $('#scPhoto').addEventListener('change', onSchemePhoto);
+  $('#scGen').addEventListener('click', genSchemeImages);
+  $('#scAddItem').addEventListener('click', () => { state.scheme.items.push({ category: '植物-其他', name: '', spec: '', qty: 1, unit: '项', cost_price: 0 }); renderSchemeItems(); });
+  if (s.id) {
+    $('#scSave').addEventListener('click', saveScheme);
+    $('#scPrint').addEventListener('click', () => printScheme(s.id));
+    $('#scQuote').addEventListener('click', () => schemeToQuote(s.id));
+    $('#scDel').addEventListener('click', () => deleteScheme(s.id));
+  } else {
+    $('#scSave').addEventListener('click', saveScheme);
+  }
+  renderSchemeItems();
+}
+
+function schemeThumbs(arr) {
+  if (!arr.length) return '<div class="empty" style="padding:14px">（暂无）</div>';
+  return arr.map((u, i) => `<div class="thumb"><img src="${esc(u)}"><button class="x" data-rm="${i}">×</button></div>`).join('');
+}
+function bindThumbRemove(kind) {
+  const arr = kind === 'photo' ? state.scheme.photos : state.scheme.images;
+  const sel = kind === 'photo' ? '#scPhotoThumbs' : '#scImgThumbs';
+  $$(sel + ' .x').forEach(b => b.addEventListener('click', () => { arr.splice(+b.dataset.rm, 1); $(sel).innerHTML = schemeThumbs(arr); bindThumbRemove(kind); }));
+}
+function readFileAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => rej(new Error('文件读取失败'));
+    fr.readAsDataURL(file);
+  });
+}
+async function onSchemePhoto(e) {
+  const files = [...e.target.files]; if (!files.length) return;
+  for (const f of files) {
+    try {
+      const dataUrl = await readFileAsDataURL(f);
+      const r = await api('POST', '/scheme/upload', { data: dataUrl });
+      if (r.error) throw new Error(r.error);
+      state.scheme.photos.push(r.url);
+    } catch (err) { toast('上传失败：' + err.message); }
+  }
+  const sel = '#scPhotoThumbs';
+  $(sel).innerHTML = schemeThumbs(state.scheme.photos);
+  bindThumbRemove('photo');
+  e.target.value = '';
+  toast('已上传 ' + state.scheme.photos.length + ' 张照片');
+}
+async function genSchemeImages() {
+  const prompt = $('#scPrompt').value.trim();
+  if (!prompt) return toast('请先填写生图描述');
+  const n = +$('#scN').value || 1;
+  const btn = $('#scGen');
+  btn.disabled = true; btn.textContent = '生成中…（约 10–60 秒）';
+  const msg = $('#scGenMsg'); msg.style.display = 'none';
+  try {
+    const r = await api('POST', '/scheme/generate', { prompt, n });
+    if (r.error) throw new Error(r.error);
+    const urls = r.urls || [];
+    if (!urls.length) throw new Error('未获取到图片');
+    state.scheme.images.push(...urls);
+    $('#scImgThumbs').innerHTML = schemeThumbs(state.scheme.images);
+    bindThumbRemove('image');
+    toast('已生成 ' + urls.length + ' 张效果图（' + (r.provider || '') + '）');
+  } catch (err) {
+    msg.style.display = 'block'; msg.textContent = '⚠ ' + err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '🎨 生成效果图';
+  }
+}
+function renderSchemeItems() {
+  const box = $('#scItems');
+  const items = state.scheme.items;
+  if (!items.length) { box.innerHTML = '<div class="empty">暂无清单，点下方“添加一行”</div>'; return; }
+  box.innerHTML = `<table class="scheme-items"><thead><tr>
+    <th>类别</th><th>名称</th><th>规格</th><th>数量</th><th>单位</th><th>成本单价</th><th></th></tr></thead><tbody>
+    ${items.map((it, i) => `<tr data-i="${i}">
+      <td><input data-f="category" value="${esc(it.category || '植物-其他')}"></td>
+      <td><input data-f="name" value="${esc(it.name || '')}"></td>
+      <td><input data-f="spec" value="${esc(it.spec || '')}"></td>
+      <td><input data-f="qty" type="number" value="${esc(it.qty || 1)}" style="width:62px"></td>
+      <td><input data-f="unit" value="${esc(it.unit || '项')}" style="width:50px"></td>
+      <td><input data-f="cost_price" type="number" value="${esc(it.cost_price || 0)}" style="width:84px"></td>
+      <td><button class="q-del" data-rmi="${i}">×</button></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+  $$('#scItems [data-f]').forEach(el => el.addEventListener('input', e => {
+    const i = +e.target.closest('tr').dataset.i;
+    state.scheme.items[i][e.target.dataset.f] = e.target.value;
+  }));
+  $$('#scItems [data-rmi]').forEach(b => b.addEventListener('click', () => { state.scheme.items.splice(+b.dataset.rmi, 1); renderSchemeItems(); }));
+}
+async function saveScheme() {
+  const s = state.scheme;
+  s.customer = $('#scCustomerName').value.trim();
+  s.project_name = $('#scProject').value.trim();
+  s.room_type = $('#scRoom').value.trim();
+  s.requirements = $('#scPrompt').value.trim();
+  s.concept = $('#scConcept').value;
+  s.status = $('#scStatus').value;
+  const cid = $('#scCustomer').value;
+  s.customer_id = cid ? +cid : null;
+  if (!s.customer) return toast('请填写客户名称');
+  if (!s.project_name) return toast('请填写项目名称');
+  const payload = {
+    customer_id: s.customer_id, customer: s.customer, project_name: s.project_name,
+    room_type: s.room_type, requirements: s.requirements, concept: s.concept,
+    photos: s.photos, images: s.images, items: s.items, status: s.status
+  };
+  let r;
+  if (s.id) r = await api('PUT', '/schemes/' + s.id, payload);
+  else r = await api('POST', '/schemes', payload);
+  if (r.error) return toast(r.error);
+  state.scheme.id = r.id; state.scheme.quote_id = r.quote_id || null;
+  toast('方案已保存 #' + r.id);
+  if (!s.id) renderSchemeEditor(); // 初次保存后显示 排版/报价/删除 按钮
+}
+function printScheme(id) {
+  window.open(`${API}/schemes/${id}/print?token=${encodeURIComponent(state.token)}`, '_blank');
+}
+async function schemeToQuote(id) {
+  const r = await api('POST', '/schemes/' + id + '/quote', {});
+  if (r.error) return toast(r.error);
+  toast('已生成报价单 ' + r.quote_no);
+  closeDrawer();
+  await switchView('quote');
+  if (state.scheme.customer_id) {
+    state.quote.customerId = String(state.scheme.customer_id);
+    const sel = $('#qCustomer');
+    if (sel) { sel.value = String(state.scheme.customer_id); onQuoteCustomerChange(); }
+  }
+}
+async function deleteScheme(id) {
+  if (!confirm('确认删除该方案？（已生成的报价单不会同步删除）')) return;
+  const r = await api('DELETE', '/schemes/' + id);
+  if (r.error) return toast(r.error);
+  closeDrawer(); toast('已删除'); renderScheme();
 }
 
 init();

@@ -17,12 +17,14 @@ import io
 import re
 import csv
 import json
+import base64
 import hmac
 import hashlib
 import secrets
 import sqlite3
 import datetime
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -263,6 +265,12 @@ DEFAULT_SETTINGS = {
     "print_title": "绿趣植物软装报价单",
     "print_show_cost": "0",        # 是否在报价单上显示成本价/毛利率(0/1)
     "print_note": "本报价含植物、硬景、辅材及基础施工费用；不含土建与大型水电改造。报价有效期 15 天，以定金到账之日起算。",
+    # ---- AI 生图（方案设计模块）----
+    "img_gen_provider": "pollinations",   # pollinations=免费免key / openai=OpenAI兼容(含通义万相/智谱/火山等)
+    "img_gen_api_key": "",                 # OpenAI兼容接口 Key（pollinations 留空）
+    "img_gen_model": "",                   # 模型名：pollinations留空；openai=gpt-image-1/dall-e-3；通义万相=wanx2.1-t2i-...
+    "img_gen_base_url": "",                # OpenAI兼容基地址，留空默认 https://api.openai.com/v1（通义万相填兼容模式地址）
+    "img_gen_size": "1024x1024",           # 生图尺寸
 }
 
 # ---------------------------------------------------------------------------
@@ -435,7 +443,28 @@ def init_db():
         name TEXT, phone TEXT, service TEXT, note TEXT,
         status TEXT DEFAULT '待跟进', created_at TEXT
     )""")
+    # 方案设计模块
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS schemes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER,
+        customer TEXT,
+        project_name TEXT,
+        room_type TEXT,
+        requirements TEXT,
+        concept TEXT,
+        photos TEXT,
+        images TEXT,
+        items TEXT,
+        status TEXT DEFAULT '草稿',
+        quote_id INTEGER,
+        created_by TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )""")
     conn.commit()
+    # 上传目录（现场照片 / AI 效果图）
+    os.makedirs(os.path.join(WEB_DIR, "uploads", "schemes"), exist_ok=True)
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -917,6 +946,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("admin/index.html", "text/html; charset=utf-8", head_only=head_only)
         if path.startswith("/admin/"):
             return self._static(path[1:], None, head_only=head_only)  # 自动推断 content-type
+        # 上传资源（现场照片 / AI 效果图） -> web/uploads/*
+        if path.startswith("/uploads/"):
+            return self._static(path[1:], None, head_only=head_only)
         # 对外品牌官网根路径 -> web/index.html
         if path in ("/", "/index.html"):
             return self._static("index.html", "text/html; charset=utf-8", head_only=head_only)
@@ -982,6 +1014,9 @@ class Handler(BaseHTTPRequestHandler):
         # 报价单打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
         if path.startswith("/api/quotes/") and path.endswith("/print"):
             return self._quote_print(path)
+        # 方案设计打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
+        if path.startswith("/api/schemes/") and path.endswith("/print"):
+            return self._scheme_print(path)
 
         u = self._need()
         if not u:
@@ -1019,6 +1054,11 @@ class Handler(BaseHTTPRequestHandler):
             parts = path.split("/")
             if len(parts) == 4 and parts[3].isdigit():
                 return self._json(self._quote_detail(int(parts[3])))
+        # 方案设计
+        if path == "/api/schemes":
+            return self._json(self._list_schemes())
+        if path.startswith("/api/schemes/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
+            return self._json(self._scheme_detail(int(path.split("/")[3])))
         if path.startswith("/api/customers/"):
             parts = path.split("/")
             cid = parts[3] if len(parts) > 3 else None
@@ -1128,6 +1168,24 @@ class Handler(BaseHTTPRequestHandler):
                 if u["role"] not in ("admin", "manager"):
                     return self._json({"error": "仅店长/管理员可审批"}, 403)
                 return self._json(self._quote_status(int(parts[3]), body, u))
+
+        # 方案设计（设计师/店长/管理员均可）
+        if path == "/api/scheme/upload" and method == "POST":
+            return self._json(self._scheme_upload(body), 201)
+        if path == "/api/scheme/generate" and method == "POST":
+            return self._json(self._scheme_generate(body, u))
+        if path == "/api/schemes" and method == "POST":
+            return self._json(self._create_scheme(body, u), 201)
+        if path.startswith("/api/schemes/"):
+            sp = path.split("/")
+            if len(sp) == 4 and sp[3].isdigit():
+                sid = int(sp[3])
+                if method == "PUT":
+                    return self._json(self._update_scheme(sid, body))
+                if method == "DELETE":
+                    return self._json(self._delete_scheme(sid))
+            if len(sp) == 5 and sp[3].isdigit() and sp[4] == "quote" and method == "POST":
+                return self._json(self._scheme_to_quote(int(sp[3]), u), 201)
 
         return self._json({"error": "unknown"}, 404)
 
@@ -1562,6 +1620,283 @@ class Handler(BaseHTTPRequestHandler):
         conn.commit()
         conn.close()
         return {"ok": True}
+
+    # ---- 方案设计 ----
+    def _he(self, s):
+        return ("" if s is None else str(s)).replace("&", "&amp;").replace("<", "&lt;") \
+            .replace(">", "&gt;").replace('"', "&quot;")
+
+    def _upload_dir(self):
+        d = os.path.join(WEB_DIR, "uploads", "schemes")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _scheme_upload(self, body):
+        data = body.get("data", "")
+        if "," in data:
+            header, b64 = data.split(",", 1)
+        else:
+            header, b64 = "", data
+        mime = "image/jpeg"
+        if header.startswith("data:"):
+            mime = header[5:].split(";")[0]
+        ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(mime, "jpg")
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            return {"error": "文件数据无法解析"}
+        if len(raw) > 12 * 1024 * 1024:
+            return {"error": "文件过大（上限 12MB）"}
+        name = secrets.token_hex(12) + "." + ext
+        with open(os.path.join(self._upload_dir(), name), "wb") as f:
+            f.write(raw)
+        return {"url": "/uploads/schemes/" + name}
+
+    def _scheme_generate(self, body, u):
+        prompt = (body.get("prompt") or "").strip()
+        if not prompt:
+            return {"error": "请输入生图提示词"}
+        try:
+            n = int(body.get("n") or 1)
+        except Exception:
+            n = 1
+        n = max(1, min(n, 4))
+        s = get_settings()
+        provider = (s.get("img_gen_provider") or "pollinations").strip() or "pollinations"
+        size = (s.get("img_gen_size") or "1024x1024").strip() or "1024x1024"
+        try:
+            w, h = size.lower().split("x")
+            w, h = int(w), int(h)
+        except Exception:
+            w, h = 1024, 1024
+        try:
+            if provider == "pollinations":
+                urls = self._gen_pollinations(prompt, w, h, n)
+            else:
+                urls = self._gen_openai(s, prompt, w, h, n)
+        except Exception as e:
+            return {"error": "生图失败：" + str(e)}
+        if not urls:
+            return {"error": "生图失败：未获取到图片，请检查 API Key / 网络 / 模型名"}
+        return {"urls": urls, "url": urls[0], "provider": provider}
+
+    def _gen_pollinations(self, prompt, w, h, n):
+        enc = urllib.parse.quote(prompt, safe="")
+        out = []
+        for _ in range(n):
+            seed = secrets.randbelow(10 ** 9)
+            url = ("https://image.pollinations.ai/prompt/%s?width=%d&height=%d&seed=%d&model=flux&nologo=true"
+                   % (enc, w, h, seed))
+            req = urllib.request.Request(url, headers={"User-Agent": "greenfun/1.0"})
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                raw = resp.read()
+            if not raw or len(raw) < 200:
+                raise Exception("Pollinations 返回空图片")
+            name = secrets.token_hex(12) + ".jpg"
+            with open(os.path.join(self._upload_dir(), name), "wb") as f:
+                f.write(raw)
+            out.append("/uploads/schemes/" + name)
+        return out
+
+    def _gen_openai(self, s, prompt, w, h, n):
+        key = (s.get("img_gen_api_key") or "").strip()
+        if not key:
+            raise Exception("未配置 API Key（请在系统设置→生图模型填写）")
+        base = (s.get("img_gen_base_url") or "https://api.openai.com/v1").strip() or "https://api.openai.com/v1"
+        model = (s.get("img_gen_model") or "gpt-image-1").strip() or "gpt-image-1"
+        payload = {"model": model, "prompt": prompt, "n": n, "size": "%dx%d" % (w, h), "response_format": "b64_json"}
+        req = urllib.request.Request(
+            base.rstrip("/") + "/images/generations",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+        out = []
+        for item in d.get("data", []):
+            b64 = item.get("b64_json") or item.get("url")
+            if not b64:
+                continue
+            if b64.startswith("http"):
+                with urllib.request.urlopen(urllib.request.Request(b64, headers={"User-Agent": "greenfun/1.0"}), timeout=60) as r2:
+                    raw = r2.read()
+            else:
+                raw = base64.b64decode(b64)
+            name = secrets.token_hex(12) + ".jpg"
+            with open(os.path.join(self._upload_dir(), name), "wb") as f:
+                f.write(raw)
+            out.append("/uploads/schemes/" + name)
+        return out
+
+    def _list_schemes(self):
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT id, customer, project_name, room_type, status, created_at, quote_id FROM schemes ORDER BY id DESC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def _scheme_detail(self, sid):
+        conn = get_db()
+        r = conn.execute("SELECT * FROM schemes WHERE id=?", (sid,)).fetchone()
+        conn.close()
+        if not r:
+            return {"error": "not found"}
+        d = dict(r)
+        for k in ("photos", "images", "items"):
+            try:
+                d[k] = json.loads(d[k] or "[]")
+            except Exception:
+                d[k] = []
+        return d
+
+    def _create_scheme(self, body, u):
+        t = now_str()
+        conn = get_db()
+        cur = conn.execute(
+            """INSERT INTO schemes (customer_id, customer, project_name, room_type, requirements, concept,
+               photos, images, items, status, quote_id, created_by, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.get("customer_id") or None, body.get("customer", ""), body.get("project_name", ""),
+             body.get("room_type", ""), body.get("requirements", ""), body.get("concept", ""),
+             json.dumps(body.get("photos", []), ensure_ascii=False),
+             json.dumps(body.get("images", []), ensure_ascii=False),
+             json.dumps(body.get("items", []), ensure_ascii=False),
+             body.get("status", "草稿"), None, u["name"], t, t))
+        sid = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return {"id": sid, **self._scheme_detail(sid)}
+
+    def _update_scheme(self, sid, body):
+        t = now_str()
+        conn = get_db()
+        r = conn.execute("SELECT * FROM schemes WHERE id=?", (sid,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "not found"}
+        conn.execute(
+            """UPDATE schemes SET customer_id=?, customer=?, project_name=?, room_type=?, requirements=?,
+               concept=?, photos=?, images=?, items=?, status=?, updated_at=? WHERE id=?""",
+            (body.get("customer_id", r["customer_id"]), body.get("customer", r["customer"]),
+             body.get("project_name", r["project_name"]), body.get("room_type", r["room_type"]),
+             body.get("requirements", r["requirements"]), body.get("concept", r["concept"]),
+             json.dumps(body.get("photos", json.loads(r["photos"] or "[]")), ensure_ascii=False),
+             json.dumps(body.get("images", json.loads(r["images"] or "[]")), ensure_ascii=False),
+             json.dumps(body.get("items", json.loads(r["items"] or "[]")), ensure_ascii=False),
+             body.get("status", r["status"]), t, sid))
+        conn.commit()
+        conn.close()
+        return self._scheme_detail(sid)
+
+    def _delete_scheme(self, sid):
+        conn = get_db()
+        conn.execute("DELETE FROM schemes WHERE id=?", (sid,))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+
+    def _scheme_to_quote(self, sid, u):
+        conn = get_db()
+        r = conn.execute("SELECT * FROM schemes WHERE id=?", (sid,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "not found"}
+        d = dict(r)
+        items = json.loads(d["items"] or "[]")
+        qitems = [{"category": it.get("category", "植物-其他"), "name": it.get("name", ""),
+                   "spec": it.get("spec", ""), "unit": it.get("unit", "项"),
+                   "qty": to_float(it.get("qty", 1)), "cost_price": to_float(it.get("cost_price", 0)),
+                   "unit_price": to_float(it.get("cost_price", 0)), "matched": True} for it in items]
+        body = {
+            "customer_id": d["customer_id"] if d["customer_id"] else None,
+            "title": (d["project_name"] or "阳台花园") + " 植物软装方案报价",
+            "items": qitems,
+            "area": to_float(d.get("area") or 0),
+        }
+        res = self._create_quote(body, u)
+        qid = res.get("id")
+        if qid:
+            conn.execute("UPDATE schemes SET quote_id=?, status='已转报价' WHERE id=?", (qid, sid))
+            conn.commit()
+        conn.close()
+        return {"quote_id": qid, **res}
+
+    def _scheme_print(self, path):
+        parts = urllib.parse.urlparse(self.path)
+        sid = path.split("/")[3]
+        if not sid.isdigit():
+            return self._send(404, "not found")
+        token = urllib.parse.parse_qs(parts.query).get("token", [""])[0]
+        sess = SESSIONS.get(token)
+        if not sess or sess["exp"] < datetime.datetime.now().timestamp():
+            return self._send(401, "<h3 style='font-family:sans-serif'>会话已过期，请回系统重新打开方案</h3>",
+                              "text/html; charset=utf-8")
+        conn = get_db()
+        r = conn.execute("SELECT * FROM schemes WHERE id=?", (int(sid),)).fetchone()
+        conn.close()
+        if not r:
+            return self._send(404, "not found")
+        d = dict(r)
+        s = get_settings()
+        photos = json.loads(d["photos"] or "[]")
+        images = json.loads(d["images"] or "[]")
+        items = json.loads(d["items"] or "[]")
+        html = self._render_scheme_html(d, s, photos, images, items)
+        return self._send(200, html, "text/html; charset=utf-8")
+
+    def _render_scheme_html(self, d, s, photos, images, items):
+        color = s.get("print_color") or "#2e7d4f"
+        company = s.get("print_company") or "绿趣"
+        slogan = s.get("print_slogan") or ""
+        footer = s.get("print_footer") or ""
+        photo_html = "".join('<img src="%s" class="ph">' % self._he(u) for u in photos) or \
+            '<div class="ph empty">（暂无现场照片）</div>'
+        img_html = "".join('<img src="%s" class="ef">' % self._he(u) for u in images) or \
+            '<div class="ef empty">（暂无 AI 效果图）</div>'
+        rows = []
+        for it in items:
+            rows.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s %s</td><td>¥%.2f</td></tr>" % (
+                self._he(it.get("category", "")), self._he(it.get("name", "")),
+                self._he(it.get("spec", "")), self._he(it.get("qty", "")),
+                self._he(it.get("unit", "")), to_float(it.get("cost_price", 0))))
+        item_rows = "".join(rows) or '<tr><td colspan="5">（未配置植物清单）</td></tr>'
+        concept = (d.get("concept") or "（待补充设计理念）").replace("\n", "<br>")
+        cust = self._he(d.get("customer", "") or "—")
+        proj = self._he(d.get("project_name", "") or "—")
+        room = self._he(d.get("room_type", "") or "—")
+        status = self._he(d.get("status", "") or "—")
+        css = f"""<style>
+ @page {{ size:A4; margin:16mm; }}
+ * {{ box-sizing:border-box; }}
+ body {{ font-family:"Noto Sans SC",system-ui,sans-serif; color:#222; margin:0; }}
+ .hd {{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid {color}; padding-bottom:10px; }}
+ .hd .co {{ font-size:22px; font-weight:700; color:{color}; }}
+ .hd .sl {{ font-size:13px; color:#666; }}
+ .meta {{ margin:14px 0; font-size:14px; }}
+ .meta b {{ color:{color}; }}
+ h2 {{ font-size:16px; color:{color}; border-left:4px solid {color}; padding-left:8px; margin:22px 0 10px; }}
+ .grid {{ display:flex; flex-wrap:wrap; gap:10px; }}
+ .ph {{ width:31%; aspect-ratio:4/3; object-fit:cover; border-radius:6px; border:1px solid #eee; }}
+ .ef {{ width:48%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,.12); }}
+ .empty {{ background:#f5f5f5; display:flex; align-items:center; justify-content:center; color:#999; font-size:13px; }}
+ .concept {{ background:#fafafa; border:1px solid #eee; border-radius:8px; padding:14px 16px; line-height:1.9; font-size:14px; }}
+ table {{ width:100%; border-collapse:collapse; margin-top:6px; font-size:13px; }}
+ th,td {{ border:1px solid #ddd; padding:7px 9px; text-align:left; }}
+ th {{ background:{color}; color:#fff; }}
+ .ft {{ margin-top:24px; border-top:1px solid #ddd; padding-top:8px; font-size:12px; color:#888; text-align:center; }}
+ @media print {{ .noprint {{ display:none; }} }}
+</style>"""
+        head = f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>绿趣 · 设计方案 · {proj}</title>'
+        body = f"""</head><body>
+ <div class="noprint" style="text-align:right;padding:8px"><button onclick="window.print()" style="padding:8px 18px;font-size:14px;background:{color};color:#fff;border:0;border-radius:6px;cursor:pointer">🖨 导出 / 打印 PDF</button></div>
+ <div class="hd"><div><div class="co">{company}</div><div class="sl">{slogan}</div></div><div style="text-align:right;font-size:13px;color:#666">设计方案书<br>{proj}</div></div>
+ <div class="meta">客户：<b>{cust}</b> ｜ 项目：{proj} ｜ 空间：{room} ｜ 状态：{status}</div>
+ <h2>一、现场照片</h2><div class="grid">{photo_html}</div>
+ <h2>二、AI 效果图</h2><div class="grid">{img_html}</div>
+ <h2>三、设计理念</h2><div class="concept">{concept}</div>
+ <h2>四、植物与物料清单</h2><table><thead><tr><th>类别</th><th>名称</th><th>规格</th><th>数量</th><th>成本单价</th></tr></thead><tbody>{item_rows}</tbody></table>
+ <div class="ft">{footer}</div>
+</body></html>"""
+        return head + css + body
 
     def _quote_print(self, path):
         """报价单打印页；token 通过查询参数 ?token= 传入"""
