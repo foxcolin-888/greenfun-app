@@ -494,6 +494,25 @@ def init_db():
         created_at TEXT,
         updated_at TEXT
     )""")
+    # 官网通用内容（服务 / 课程活动 / 合作伙伴 / 团队 / 创始人 等卡片的详情数据）
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS contents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        cover TEXT,
+        detail TEXT,
+        gallery TEXT,
+        sort INTEGER DEFAULT 0,
+        status INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )""")
+    try:
+        conn.execute("ALTER TABLE contents ADD COLUMN meta TEXT")
+    except Exception:
+        pass  # 旧库已有该列
     # 积分账户与流水
     c.execute("""
     CREATE TABLE IF NOT EXISTS credits (
@@ -512,9 +531,10 @@ def init_db():
         created_at TEXT
     )""")
     conn.commit()
-    # 上传目录（现场照片 / AI 效果图 / 官网案例），可指向持久盘 UPLOAD_DIR
+    # 上传目录（现场照片 / AI 效果图 / 官网案例 / 官网通用内容），可指向持久盘 UPLOAD_DIR
     os.makedirs(os.path.join(UPLOAD_DIR, "schemes"), exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_DIR, "cases"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "content"), exist_ok=True)
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -1089,6 +1109,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._static("case.html", "text/html; charset=utf-8", head_only=head_only)
         if path == "/case.js":
             return self._static("case.js", "text/javascript; charset=utf-8", head_only=head_only)
+        if path == "/detail.html":
+            return self._static("detail.html", "text/html; charset=utf-8", head_only=head_only)
+        if path == "/detail.js":
+            return self._static("detail.js", "text/javascript; charset=utf-8", head_only=head_only)
         if path.startswith("/api/"):
             if head_only:
                 return self._send(200, b"", "application/json")
@@ -1172,6 +1196,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._list_cases(public_only=True))
         if path.startswith("/api/cases/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
             return self._json(self._case_detail(int(path.split("/")[3])))
+        # 官网通用内容（公开，无需登录）：按类型列表 + 单条详情
+        if path == "/api/contents":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            ctype = (qs.get("type") or [None])[0]
+            return self._json(self._list_contents(public_only=True, ctype=ctype))
+        if path.startswith("/api/contents/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
+            return self._json(self._content_detail(int(path.split("/")[3])))
 
         u = self._need()
         if not u:
@@ -1225,6 +1256,11 @@ class Handler(BaseHTTPRequestHandler):
             if u["role"] not in ("admin", "manager", "designer"):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._list_cases(public_only=False))
+        # 官网通用内容（后台管理列表：含未上架、可按 type 过滤）
+        if path == "/api/contents/all":
+            if u["role"] not in ("admin", "manager", "designer"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._list_contents(public_only=False))
         if path.startswith("/api/customers/"):
             parts = path.split("/")
             cid = parts[3] if len(parts) > 3 else None
@@ -1376,6 +1412,22 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(self._update_case(cid, body))
                 if method == "DELETE":
                     return self._json(self._delete_case(cid))
+
+        # 官网通用内容（管理员/店长/设计师可管理）
+        if path == "/api/contents" and method == "POST":
+            if u["role"] not in ("admin", "manager", "designer"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._create_content(body, u), 201)
+        if path.startswith("/api/contents/"):
+            ctp = path.split("/")
+            if len(ctp) == 4 and ctp[3].isdigit():
+                ctid = int(ctp[3])
+                if u["role"] not in ("admin", "manager", "designer"):
+                    return self._json({"error": "无权限"}, 403)
+                if method == "PUT":
+                    return self._json(self._update_content(ctid, body))
+                if method == "DELETE":
+                    return self._json(self._delete_content(ctid))
 
         return self._json({"error": "unknown"}, 404)
 
@@ -1925,7 +1977,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _scheme_upload(self, body):
         folder = (body.get("folder") or "schemes").strip() or "schemes"
-        if folder not in ("schemes", "cases"):
+        if folder not in ("schemes", "cases", "content"):
             folder = "schemes"
         data = body.get("data", "")
         if "," in data:
@@ -2432,6 +2484,85 @@ class Handler(BaseHTTPRequestHandler):
     def _delete_case(self, cid):
         conn = get_db()
         conn.execute("DELETE FROM cases WHERE id=?", (cid,))
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+
+    # ---- 官网通用内容（服务 / 课程活动 / 伙伴 / 团队 / 创始人） ----
+    def _list_contents(self, public_only=False, ctype=None):
+        conn = get_db()
+        sql = "SELECT id, type, title, summary, cover, meta, sort FROM contents"
+        where, args = [], []
+        if public_only:
+            where.append("status=1")
+        if ctype:
+            where.append("type=?")
+            args.append(ctype)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY sort ASC, id ASC"
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def _content_detail(self, ctid):
+        conn = get_db()
+        r = conn.execute("SELECT * FROM contents WHERE id=?", (ctid,)).fetchone()
+        conn.close()
+        if not r:
+            return {"error": "not found"}
+        d = dict(r)
+        try:
+            d["gallery"] = json.loads(d.get("gallery") or "[]")
+        except Exception:
+            d["gallery"] = []
+        return d
+
+    def _create_content(self, body, u):
+        t = now_str()
+        ctype = (body.get("type") or "").strip()
+        if not ctype:
+            return {"error": "缺少 type"}
+        conn = get_db()
+        cur = conn.execute(
+            """INSERT INTO contents (type, title, summary, cover, detail, gallery, meta, sort, status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (ctype, body.get("title", "").strip(), body.get("summary", ""),
+             body.get("cover", ""), body.get("detail", ""),
+             json.dumps(body.get("gallery", []), ensure_ascii=False),
+             body.get("meta", ""),
+             to_int(body.get("sort", 0)), to_int(body.get("status", 1)), t, t))
+        ctid = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return {"id": ctid, **self._content_detail(ctid)}
+
+    def _update_content(self, ctid, body):
+        t = now_str()
+        conn = get_db()
+        r = conn.execute("SELECT * FROM contents WHERE id=?", (ctid,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "not found"}
+        gallery = body.get("gallery")
+        if gallery is None:
+            gallery = json.loads(r["gallery"] or "[]")
+        elif not isinstance(gallery, list):
+            gallery = []
+        conn.execute(
+            """UPDATE contents SET type=?, title=?, summary=?, cover=?, detail=?, gallery=?, meta=?, sort=?, status=?, updated_at=? WHERE id=?""",
+            (body.get("type", r["type"]).strip(), body.get("title", r["title"]).strip(),
+             body.get("summary", r["summary"]), body.get("cover", r["cover"]),
+             body.get("detail", r["detail"]), json.dumps(gallery, ensure_ascii=False),
+             body.get("meta", r.get("meta", "")),
+             to_int(body.get("sort", r["sort"])), to_int(body.get("status", r["status"])), t, ctid))
+        conn.commit()
+        conn.close()
+        return self._content_detail(ctid)
+
+    def _delete_content(self, ctid):
+        conn = get_db()
+        conn.execute("DELETE FROM contents WHERE id=?", (ctid,))
         conn.commit()
         conn.close()
         return {"ok": True}

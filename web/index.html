@@ -114,42 +114,8 @@
       </div>
 
       <div class="svc-layout">
-        <article class="svc-feature reveal">
-          <div class="svc-feature-media g-forest"></div>
-          <div class="svc-feature-body">
-            <span class="svc-index">01</span>
-            <h3>商业空间植物全案</h3>
-            <p>银行、酒店、商场、写字楼、政府大厅等公共空间，从设计到养护的一站式植物生态服务。年客单价 2 万 — 100 万。</p>
-          </div>
-        </article>
-
-        <div class="svc-list">
-          <article class="svc-row reveal">
-            <span class="svc-index">02</span>
-            <div class="svc-row-text"><h4>家庭植物软装</h4><p>区域行业首创。全屋绿植软装设计，覆盖阳台、客厅、玄关、书房。</p></div>
-            <span class="svc-thumb g-sage"></span>
-          </article>
-          <article class="svc-row reveal">
-            <span class="svc-index">03</span>
-            <div class="svc-row-text"><h4>单位绿植设计租赁</h4><p>为银行、酒店、商场、写字楼、政府大厅等商业与公共空间量身打造活的植物生态系统。</p></div>
-            <span class="svc-thumb g-moss"></span>
-          </article>
-          <article class="svc-row reveal">
-            <span class="svc-index">04</span>
-            <div class="svc-row-text"><h4>艺术盆栽礼品零售</h4><p>原创设计小绿植盆景，"有生命的手作礼"。</p></div>
-            <span class="svc-thumb g-mint"></span>
-          </article>
-          <article class="svc-row reveal">
-            <span class="svc-index">05</span>
-            <div class="svc-row-text"><h4>植物美学手作课程</h4><p>累计授课 600+ 场，触达 10000+ 人。</p></div>
-            <span class="svc-thumb g-leaf"></span>
-          </article>
-          <article class="svc-row reveal">
-            <span class="svc-index">06</span>
-            <div class="svc-row-text"><h4>绿植行业培训</h4><p>面向全国家政老板、系统内培训。</p></div>
-            <span class="svc-thumb g-fern"></span>
-          </article>
-        </div>
+        <div id="svcFeature"></div>
+        <div class="svc-list" id="svcList"></div>
       </div>
     </div>
   </section>
@@ -205,7 +171,7 @@
     <div class="container founder-grid">
       <div class="founder-media reveal">
         <div class="founder-photo"></div>
-        <div class="founder-card"><span>🌿</span><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
+        <div class="founder-card" id="founderCard" style="cursor:pointer"><span>🌿</span><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
       </div>
       <div class="founder-text reveal">
         <span class="kicker">创始人故事</span>
@@ -241,12 +207,7 @@
         <div class="classroom-photo g-fern"></div>
         <span class="classroom-cap">手作 · 微景观</span>
       </div>
-      <div class="course-grid">
-        <article class="course-card reveal"><div class="course-img g-fern"></div><h4>植物微景观手作</h4><p>在透明玻璃容器中，用苔藓、多肉、小石头创造袖珍自然世界。适合零基础。</p><div class="course-meta">约2小时 · 10-30人 · 68元起</div></article>
-        <article class="course-card reveal"><div class="course-img g-leaf"></div><h4>艺术盆栽创作</h4><p>学习东方盆景美学，亲手制作有灵魂的艺术盆栽。全程专业指导。</p><div class="course-meta">约3小时 · 5-20人 · 168元起</div></article>
-        <article class="course-card reveal"><div class="course-img g-brown"></div><h4>企业团建定制</h4><p>根据企业预算与主题定制，在协作中促进团队伙伴。</p><div class="course-meta">定制 · 20-100人 · 面议</div></article>
-        <article class="course-card reveal"><div class="course-img g-mint"></div><h4>VIP 答谢会 / 客户沙龙</h4><p>为 VIP 客户打造沉浸式植物美学体验，可选配茶饮咖啡服务。</p><div class="course-meta">定制 · 10-50人 · 面议</div></article>
-      </div>
+      <div class="course-grid" id="courseGrid"></div>
     </div>
   </section>
 
@@ -258,23 +219,7 @@
         <h2 class="display">携手绿趣，共享植物美学蓝海市场</h2>
         <p class="sec-lead">成熟商业模式 · 完善服务体系 · 持续品牌赋能</p>
       </div>
-      <div class="partner-grid">
-        <article class="partner-card reveal">
-          <div class="pc-icon">💛</div><h4>品牌加盟</h4>
-          <p>成熟的商业模式、完善的培训体系、持续的品牌赋能，成为当地植物美学服务专家。</p>
-          <div class="pc-price">5 万<span>起</span></div>
-        </article>
-        <article class="partner-card reveal">
-          <div class="pc-icon">💡</div><h4>众筹合作</h4>
-          <p>灵活的合作模式，共享供应链资源与优势，多种方案，总有一款适合您。</p>
-          <div class="pc-price">面议</div>
-        </article>
-        <article class="partner-card reveal">
-          <div class="pc-icon">🎓</div><h4>校企合作</h4>
-          <p>与温州科技职业学院等高校合作，共建实训基地，培养行业新生力量。</p>
-          <div class="pc-price">产学研</div>
-        </article>
-      </div>
+      <div class="partner-grid" id="partnerGrid"></div>
       <div class="partner-cta"><a href="#contact" class="btn btn-light">咨询加盟详情</a></div>
     </div>
   </section>
@@ -299,18 +244,13 @@
   </section>
 
   <!-- 核心团队 -->
-  <section class="section team">
+  <section class="section team" id="team">
     <div class="container">
       <div class="sec-head center reveal">
         <span class="kicker">Our Team</span>
         <h2 class="display">38 人专业团队<br>用热爱守护每一株植物</h2>
       </div>
-      <div class="team-grid">
-        <div class="team-member reveal"><div class="tm-avatar founder-av">戴</div><h4>戴晓东</h4><p>创始人/首席设计师<br>15年专注植物美学，赴日韩台游学，东方植物美学空间设计实践者。</p></div>
-        <div class="team-member reveal"><div class="tm-avatar">设</div><h4>设计团队</h4><p>8名植物美学设计师<br>空间设计与植物学双重背景，每个方案兼具美学与科学。</p></div>
-        <div class="team-member reveal"><div class="tm-avatar">护</div><h4>养护团队</h4><p>12名资深养护师<br>平均从业5年以上，精准把控室内植物养护之道。</p></div>
-        <div class="team-member reveal"><div class="tm-avatar">服</div><h4>服务团队</h4><p>项目经理 · 客户服务<br>定期巡检养护，让客户享受长久的绿色空间体验。</p></div>
-      </div>
+      <div class="team-grid" id="teamGrid"></div>
       <div class="badges">
         <div class="badge reveal"><span>🏆</span><strong>ISO 质量认证</strong><small>ISO9000 等认证</small></div>
         <div class="badge reveal"><span>🌸</span><strong>省花卉协会</strong><small>副会长单位</small></div>

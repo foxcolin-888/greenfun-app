@@ -186,5 +186,111 @@
       $$('.reveal').forEach(el => el.classList.add('is-visible'));
     }
   }
+
+  // ---- 官网通用内容卡片（服务/课程/伙伴/团队/创始人，点击进入详情页） ----
+  async function fetchContents(type) {
+    try {
+      const res = await fetch('/api/contents?type=' + encodeURIComponent(type));
+      const arr = await res.json();
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { console.log('contents api not ready', e); return []; }
+  }
+
+  function bindContentClicks(root) {
+    (root || document).querySelectorAll('[data-content-id]').forEach(el => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => { location.href = 'detail.html?id=' + el.dataset.contentId; });
+    });
+  }
+
+  function refreshReveals() {
+    $$('.reveal').forEach(el => io.observe(el));
+  }
+
+  async function loadServices() {
+    const feat = $('#svcFeature');
+    const list = $('#svcList');
+    if (!feat && !list) return;
+    const items = await fetchContents('service');
+    if (!items.length) return;
+    const idx = (i) => String(i + 1).padStart(2, '0');
+    if (feat) {
+      const f = items[0];
+      feat.innerHTML = '<article class="svc-feature reveal" data-content-id="' + f.id + '">'
+        + '<div class="svc-feature-media' + coverAttr(f.cover, 0) + '></div>'
+        + '<div class="svc-feature-body"><span class="svc-index">' + idx(0) + '</span>'
+        + '<h3>' + esc(f.title) + '</h3><p>' + esc(f.summary || '') + '</p></div></article>';
+    }
+    if (list) {
+      list.innerHTML = items.slice(1).map((c, i) =>
+        '<article class="svc-row reveal" data-content-id="' + c.id + '">'
+        + '<span class="svc-index">' + idx(i + 1) + '</span>'
+        + '<div class="svc-row-text"><h4>' + esc(c.title) + '</h4><p>' + esc(c.summary || '') + '</p></div>'
+        + '<span class="svc-thumb ' + GRAD[(i + 1) % GRAD.length] + '"></span></article>'
+      ).join('');
+    }
+    bindContentClicks(document);
+    refreshReveals();
+  }
+
+  async function loadCourses() {
+    const g = $('#courseGrid');
+    if (!g) return;
+    const items = await fetchContents('course');
+    if (!items.length) return;
+    g.innerHTML = items.map((c, i) =>
+      '<article class="course-card reveal" data-content-id="' + c.id + '">'
+      + '<div class="course-img ' + GRAD[i % GRAD.length] + '"></div>'
+      + '<h4>' + esc(c.title) + '</h4><p>' + esc(c.summary || '') + '</p>'
+      + (c.meta ? '<div class="course-meta">' + esc(c.meta) + '</div>' : '')
+      + '</article>'
+    ).join('');
+    bindContentClicks(g);
+    refreshReveals();
+  }
+
+  async function loadPartners() {
+    const g = $('#partnerGrid');
+    if (!g) return;
+    const items = await fetchContents('partner');
+    if (!items.length) return;
+    g.innerHTML = items.map((c) =>
+      '<article class="partner-card reveal" data-content-id="' + c.id + '">'
+      + '<div class="pc-icon">🌿</div><h4>' + esc(c.title) + '</h4>'
+      + '<p>' + esc(c.summary || '') + '</p>'
+      + (c.meta ? '<div class="pc-price">' + esc(c.meta) + '</div>' : '')
+      + '</article>'
+    ).join('');
+    bindContentClicks(g);
+    refreshReveals();
+  }
+
+  async function loadTeam() {
+    const g = $('#teamGrid');
+    if (!g) return;
+    const items = await fetchContents('team');
+    if (!items.length) return;
+    g.innerHTML = items.map((c) => {
+      const av = String(c.title || '绿').charAt(0);
+      return '<div class="team-member reveal" data-content-id="' + c.id + '">'
+        + '<div class="tm-avatar">' + esc(av) + '</div>'
+        + '<h4>' + esc(c.title) + '</h4><p>' + esc(c.summary || '') + '</p></div>';
+    }).join('');
+    bindContentClicks(g);
+    refreshReveals();
+  }
+
+  async function bindFounder() {
+    const card = $('#founderCard');
+    if (!card) return;
+    const items = await fetchContents('founder');
+    if (items.length) card.onclick = () => { location.href = 'detail.html?id=' + items[0].id; };
+  }
+
   loadCases();
+  loadServices();
+  loadCourses();
+  loadPartners();
+  loadTeam();
+  bindFounder();
 })();
