@@ -16,11 +16,34 @@ if (-not $py) {
     exit 1
 }
 
+# 启动前先清理旧的后台 app.py 进程，避免端口 8000 被占用/竞争导致服务不可用
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like '*app.py*' } |
+    ForEach-Object {
+        Write-Host "==> 结束旧服务进程 PID $($_.ProcessId) ..." -ForegroundColor DarkGray
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+Start-Sleep -Seconds 1
+
 Write-Host "==> 启动本地服务 (http://localhost:8000) ..." -ForegroundColor Cyan
 $appLog = "$deployDir\app.log"
 $appErr = "$deployDir\app.err"
 $app = Start-Process -FilePath $py -ArgumentList "app.py" -PassThru -WindowStyle Hidden -RedirectStandardOutput $appLog -RedirectStandardError $appErr
-Start-Sleep -Seconds 2
+
+# 等待服务就绪（最多 10 秒）
+$ready = $false
+for ($i = 0; $i -lt 10; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+        $resp = Invoke-WebRequest -Uri "http://localhost:8000/api/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        if ($resp.StatusCode -eq 200) { $ready = $true; break }
+    } catch {}
+}
+if (-not $ready) {
+    Write-Host "[错误] 本地服务 8000 端口未在 10 秒内就绪，请检查 deploy-local\app.err 日志。" -ForegroundColor Red
+    Read-Host "按回车退出"
+    exit 1
+}
 
 Write-Host "==> 启动外网隧道 (Cloudflare Tunnel) ..." -ForegroundColor Cyan
 $tunnelLog = "$deployDir\tunnel.log"
