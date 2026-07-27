@@ -1005,10 +1005,23 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, html, "text/html; charset=utf-8")
 
     def _body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        if length == 0:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except Exception:
+            length = 0
+        if length <= 0:
             return {}
-        raw = self.rfile.read(length)
+        # 关键修复：socket 上的 rfile.read(n) 不保证一次读满 n 字节，
+        # 中文等多字节 UTF-8 负载常被截断导致 json 解析失败、body 变 {}。
+        # 必须循环读到 length 字节为止。
+        raw = b""
+        while len(raw) < length:
+            chunk = self.rfile.read(min(65536, length - len(raw)))
+            if not chunk:
+                break
+            raw += chunk
+        if len(raw) < length:
+            return {}
         try:
             return json.loads(raw.decode("utf-8"))
         except Exception:
