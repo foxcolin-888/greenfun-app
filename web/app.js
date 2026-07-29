@@ -127,6 +127,80 @@
     ? ' style="background-image:url(\'' + String(cover).replace(/'/g, "\\'") + '\')"'
     : ' class="' + GRAD[idx % GRAD.length] + '"';
 
+  // ===== 全站可自定义文案与外观（后台「站点装修」） =====
+  const FONT_PRESETS = {
+    serif: { serif:'Noto Serif SC', sans:'Noto Sans SC', link:'' },
+    sans:  { serif:'Noto Sans SC',  sans:'Noto Sans SC', link:'' },
+    round: { serif:'ZCOOL KuaiLe',  sans:'Noto Sans SC', link:'https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&display=swap' },
+    kai:   { serif:'LXGW WenKai TC', sans:'Noto Sans SC', link:'https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC&display=swap' },
+  };
+  function hexToRgb(h){ h=(h||'').replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16)||0; return [n>>16&255, n>>8&255, n&255]; }
+  function rgbToHex(r,g,b){ return '#'+[r,g,b].map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join(''); }
+  function shade(hex, pct){ let [r,g,b]=hexToRgb(hex); const t=pct<0?0:255; const p=Math.abs(pct); r=Math.round((t-r)*p+r); g=Math.round((t-g)*p+g); b=Math.round((t-b)*p+b); return rgbToHex(r,g,b); }
+  function buildPalette(base){
+    base = base || '#2D5A27';
+    return {
+      '--primary-green': base, '--secondary-green': shade(base,0.12), '--accent-green': shade(base,0.34),
+      '--green-900': shade(base,-0.42), '--green-800': shade(base,-0.30), '--green-700': shade(base,-0.12),
+      '--green-600': shade(base,0.02), '--green-500': shade(base,0.14), '--green-400': shade(base,0.28),
+      '--green-300': shade(base,0.42), '--green-200': shade(base,0.56), '--green-100': shade(base,0.70), '--green-50': shade(base,0.82),
+    };
+  }
+  function applyAppearance(a){
+    a = a || {};
+    const p = FONT_PRESETS[a.font_preset] || FONT_PRESETS.serif;
+    const root = document.documentElement.style;
+    root.setProperty('--font-serif', '"'+p.serif+'", "Songti SC", "SimSun", serif');
+    root.setProperty('--font-sans', '"'+p.sans+'", "PingFang SC", "Microsoft YaHei", sans-serif');
+    if (p.link && !document.querySelector('link[data-font="'+a.font_preset+'"]')) {
+      const l=document.createElement('link'); l.rel='stylesheet'; l.href=p.link; l.setAttribute('data-font', a.font_preset); document.head.appendChild(l);
+    }
+    const pal = buildPalette(a.primary_color);
+    for (const k in pal) root.setProperty(k, pal[k]);
+  }
+  function setText(sel, val){ const el=$(sel); if(el && val!=null && String(val)!=='') el.textContent=val; }
+  function setHtml(sel, val){ const el=$(sel); if(el && val!=null && String(val)!=='') el.innerHTML=val; }
+  async function loadSite(){
+    let cfg=null;
+    try{ const r=await fetch('/api/site'); cfg=await r.json(); }catch(e){ console.log('site api not ready',e); }
+    if(!cfg) return;
+    applyAppearance(cfg.appearance);
+    const h=cfg.hero||{};
+    setText('#heroKicker', h.kicker);
+    if(h.title) setHtml('#heroTitle', Array.isArray(h.title)? h.title.join('<br>') : h.title);
+    setText('#heroDesc', h.desc);
+    if(h.cta1){ const b=$('#heroCta1'); if(b){ b.textContent=h.cta1; if(h.cta1_href) b.href=h.cta1_href; } }
+    if(h.cta2){ const b=$('#heroCta2'); if(b){ b.textContent=h.cta2; if(h.cta2_href) b.href=h.cta2_href; } }
+    if(h.photo){ const ph=$('#heroPhoto'); if(ph){ ph.style.backgroundImage='url("'+h.photo+'")'; ph.style.backgroundSize='cover'; ph.style.backgroundPosition='center'; } }
+    const a=cfg.about||{};
+    setText('#aboutKicker', a.kicker);
+    if(a.title) setHtml('#aboutTitle', Array.isArray(a.title)? a.title.join('<br>') : a.title);
+    setText('#aboutLead', a.lead);
+    if(a.values){ const ul=$('#aboutValues'); if(ul) ul.innerHTML=a.values.map(v=>'<li><span>'+esc(v.label||'')+'</span>'+esc(v.text||'')+'</li>').join(''); }
+    if(a.photo){ const p=$('#aboutPhoto'); if(p){ p.style.backgroundImage='url("'+a.photo+'")'; p.style.backgroundSize='cover'; p.style.backgroundPosition='center'; } }
+    setText('#aboutChipTitle', a.chip_title); setText('#aboutChipSub', a.chip_sub); setText('#aboutChipIcon', a.chip_icon||'🌿');
+    if(Array.isArray(cfg.stats)){ const g=$('#statsGrid'); if(g) g.innerHTML=cfg.stats.map(s=>'<div class="stat-item reveal"><strong>'+esc(s.num||'')+(s.suffix?('<span>'+esc(s.suffix)+'</span>'):'')+'</strong><span>'+esc(s.label||'')+'</span></div>').join(''); }
+    if(Array.isArray(cfg.voices)){ const g=$('#voicesGrid'); if(g) g.innerHTML=cfg.voices.map(v=>'<blockquote class="voice reveal"><p>'+esc(v.quote||'')+'</p><footer><span class="v-avatar">'+esc(v.avatar||(v.name||'·').charAt(0))+'</span><div><strong>'+esc(v.name||'')+'</strong><span>'+esc(v.role||'')+'</span></div></footer></blockquote>').join(''); }
+    const f=cfg.founder||{};
+    setText('#founderKicker', f.kicker); setText('#founderTitle', f.title); setText('#founderQuote', f.quote);
+    if(f.paras){ if(f.paras[0]) setText('#founderPara1', f.paras[0]); if(f.paras[1]) setText('#founderPara2', f.paras[1]); }
+    setText('#founderSign', f.sign);
+    if(f.photo){ const p=$('#founderPhoto'); if(p){ p.style.backgroundImage='url("'+f.photo+'")'; p.style.backgroundSize='cover'; p.style.backgroundPosition='center'; } }
+    setText('#founderCardTitle', f.card_title); setText('#founderCardSub', f.card_sub); setText('#founderCardIcon', f.card_icon||'🌿');
+    if(Array.isArray(cfg.timeline)){ const g=$('#timelineList'); if(g) g.innerHTML=cfg.timeline.map(t=>'<div class="timeline-item reveal"><span class="year">'+esc(t.year||'')+'</span><div class="event"><h4>'+esc(t.title||'')+'</h4><p>'+esc(t.desc||'')+'</p></div></div>').join(''); }
+    const c=cfg.contact||{};
+    setText('#contactAddress', c.address); setText('#contactPhone', c.phone); setText('#contactWechat', c.wechat); setText('#contactHours', c.hours);
+    const ft=cfg.footer||{};
+    if(ft.desc) setHtml('#footerDesc', ft.desc);
+    setText('#footerCopyright', ft.copyright);
+    if(Array.isArray(ft.links)){ const fls=$$('.footer-links'); ft.links.slice(0,2).forEach((grp,i)=>{ const fl=fls[i]; if(!fl) return; fl.innerHTML='<h4>'+esc(grp.group||'')+'</h4>'+(grp.items||[]).map(it=>'<a href="'+esc(it.href||'#')+'">'+esc(it.label||'')+'</a>').join(''); }); }
+    const ap=cfg.appearance||{};
+    if(ap.logo_text){ setText('#logoText', ap.logo_text); setText('#footerLogoText', ap.logo_text); }
+    if(ap.logo_icon){ setText('#logoIcon', ap.logo_icon); setText('#footerLogoIcon', ap.logo_icon); }
+    if(Array.isArray(cfg.nav)){ const nl=$('#navLinks'); if(nl) nl.innerHTML=cfg.nav.map(n=>'<li><a href="'+esc(n.href||'#')+'"'+(n.cta?' class="nav-cta"':'')+'>'+esc(n.label||'')+'</a></li>').join(''); }
+    refreshReveals();
+  }
+
   async function loadCases() {
     const feature = $('#casesFeature');
     const grid = $('#portfolioGrid');
@@ -240,7 +314,7 @@
     if (!items.length) return;
     g.innerHTML = items.map((c, i) =>
       '<article class="course-card reveal" data-content-id="' + c.id + '">'
-      + '<div class="course-img ' + GRAD[i % GRAD.length] + '"></div>'
+      + '<div class="course-img ' + GRAD[i % GRAD.length] + '"><span class="course-ico">' + esc(c.icon || '🌿') + '</span></div>'
       + '<h4>' + esc(c.title) + '</h4><p>' + esc(c.summary || '') + '</p>'
       + (c.meta ? '<div class="course-meta">' + esc(c.meta) + '</div>' : '')
       + '</article>'
@@ -256,7 +330,7 @@
     if (!items.length) return;
     g.innerHTML = items.map((c) =>
       '<article class="partner-card reveal" data-content-id="' + c.id + '">'
-      + '<div class="pc-icon">🌿</div><h4>' + esc(c.title) + '</h4>'
+      + '<div class="pc-icon">' + esc(c.icon || '🌿') + '</div><h4>' + esc(c.title) + '</h4>'
       + '<p>' + esc(c.summary || '') + '</p>'
       + (c.meta ? '<div class="pc-price">' + esc(c.meta) + '</div>' : '')
       + '</article>'
@@ -271,7 +345,7 @@
     const items = await fetchContents('team');
     if (!items.length) return;
     g.innerHTML = items.map((c) => {
-      const av = String(c.title || '绿').charAt(0);
+      const av = c.icon || String(c.title || '绿').charAt(0);
       return '<div class="team-member reveal" data-content-id="' + c.id + '">'
         + '<div class="tm-avatar">' + esc(av) + '</div>'
         + '<h4>' + esc(c.title) + '</h4><p>' + esc(c.summary || '') + '</p></div>';
@@ -287,6 +361,7 @@
     if (items.length) card.onclick = () => { location.href = 'detail.html?id=' + items[0].id; };
   }
 
+  loadSite();
   loadCases();
   loadServices();
   loadCourses();

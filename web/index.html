@@ -26,9 +26,9 @@
 
   <nav class="navbar" id="navbar">
     <div class="nav-inner">
-      <a href="#home" class="logo">
-        <span class="logo-icon">🌿</span>
-        <span class="logo-text">绿趣</span>
+      <a href="#home" class="logo" id="logoLink">
+        <span class="logo-icon" id="logoIcon">🌿</span>
+        <span class="logo-text" id="logoText">绿趣</span>
       </a>
       <button class="nav-toggle" id="navToggle" aria-label="菜单" aria-expanded="false">
         <span></span><span></span><span></span>
@@ -50,17 +50,17 @@
     <div class="hero-bg"></div>
     <div class="container hero-inner">
       <div class="hero-text">
-        <span class="kicker kicker-light">EST. 2010 · 室内绿植空间美学专家</span>
-        <h1 class="hero-title">让植物<br>成为<span class="hl">空间的加分项</span></h1>
-        <p class="hero-desc">以差异化的植物美学设计，让热爱生活的人享受植物的美与乐趣。温州绿趣植物空间艺术科技有限公司，为商业与家庭空间注入自然生命力。</p>
+        <span class="kicker kicker-light" id="heroKicker">EST. 2010 · 室内绿植空间美学专家</span>
+        <h1 class="hero-title" id="heroTitle">让植物<br>成为<span class="hl">空间的加分项</span></h1>
+        <p class="hero-desc" id="heroDesc">以差异化的植物美学设计，让热爱生活的人享受植物的美与乐趣。温州绿趣植物空间艺术科技有限公司，为商业与家庭空间注入自然生命力。</p>
         <div class="hero-actions">
-          <a href="#contact" class="btn btn-primary">预约免费设计</a>
-          <a href="#services" class="btn btn-ghost-light">了解服务 →</a>
+          <a href="#contact" class="btn btn-primary" id="heroCta1">预约免费设计</a>
+          <a href="#services" class="btn btn-ghost-light" id="heroCta2">了解服务 →</a>
         </div>
       </div>
       <div class="hero-media reveal">
         <figure class="hero-figure">
-          <div class="hero-photo g-forest"></div>
+          <div class="hero-photo g-forest" id="heroPhoto"></div>
           <figcaption class="hero-cap">阳光 · 绿植 · 空间</figcaption>
         </figure>
         <div class="hero-stat">
@@ -75,7 +75,7 @@
   <!-- 理念宣言 -->
   <section class="manifesto">
     <div class="container">
-      <p class="manifesto-text reveal">"让热爱生活的人，<em>享受植物的美和乐趣</em>。"</p>
+      <p class="manifesto-text reveal" id="manifestoText">"让热爱生活的人，<em>享受植物的美和乐趣</em>。"</p>
     </div>
   </section>
 
@@ -83,17 +83,17 @@
   <section class="section about" id="about">
     <div class="container about-grid">
       <div class="about-media reveal">
-        <div class="about-photo g-moss"></div>
+        <div class="about-photo g-moss" id="aboutPhoto"></div>
         <div class="about-chip">
-          <span>🌿</span>
-          <div><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
+          <span id="aboutChipIcon">🌿</span>
+          <div><strong id="aboutChipTitle">城市森林会客厅</strong><small id="aboutChipSub">杨府山公园 · 映秀山房</small></div>
         </div>
       </div>
       <div class="about-text reveal">
-        <span class="kicker">关于绿趣</span>
-        <h2 class="display">15 年深耕，<br>用植物重新定义<br>空间价值</h2>
-        <p class="lead">我们不仅提供绿植，更提供一种与自然共生的生活方式。每一位绿趣人都是植物美学的传递者，用专业与热爱，为每一个空间注入生命的力量。</p>
-        <ul class="value-list">
+        <span class="kicker" id="aboutKicker">关于绿趣</span>
+        <h2 class="display" id="aboutTitle">15 年深耕，<br>用植物重新定义<br>空间价值</h2>
+        <p class="lead" id="aboutLead">我们不仅提供绿植，更提供一种与自然共生的生活方式。每一位绿趣人都是植物美学的传递者，用专业与热爱，为每一个空间注入生命的力量。</p>
+        <ul class="value-list" id="aboutValues">
           <li><span>品牌理念</span>让热爱生活的人，享受植物的美和乐趣</li>
           <li><span>核心理念</span>融合自然，融美于居</li>
           <li><span>服务承诺</span>科学设计、美学方案、场景化布置全流程服务</li>
@@ -122,7 +122,7 @@
 
   <!-- 数据条（巨型数字） -->
   <section class="stats">
-    <div class="container stats-grid">
+    <div class="container stats-grid" id="statsGrid">
       <div class="stat-item reveal"><strong>15</strong><span>年行业深耕</span></div>
       <div class="stat-item reveal"><strong>300<span>+</span></strong><span>企业客户</span></div>
       <div class="stat-item reveal"><strong>92<span>%</span></strong><span>续约率</span></div>
@@ -149,7 +149,7 @@
         <span class="kicker">Voices</span>
         <h2 class="display">平均合作 7 年，用专业赢得信赖</h2>
       </div>
-      <div class="voices-grid">
+      <div class="voices-grid" id="voicesGrid">
         <blockquote class="voice reveal">
           <p>"绿趣团队对植物的呈现超出预期。他们不只是摆放几盆花，而是真正把室内外空间当作一个整体来设计，每次方案都让我们惊喜。"</p>
           <footer><span class="v-avatar">华</span><div><strong>华夏银行温州分行</strong><span>行政部负责人</span></div></footer>
@@ -170,16 +170,16 @@
   <section class="section founder">
     <div class="container founder-grid">
       <div class="founder-media reveal">
-        <div class="founder-photo"></div>
-        <div class="founder-card" id="founderCard" style="cursor:pointer"><span>🌿</span><strong>城市森林会客厅</strong><small>杨府山公园 · 映秀山房</small></div>
+        <div class="founder-photo" id="founderPhoto"></div>
+        <div class="founder-card" id="founderCard" style="cursor:pointer"><span id="founderCardIcon">🌿</span><strong id="founderCardTitle">城市森林会客厅</strong><small id="founderCardSub">杨府山公园 · 映秀山房</small></div>
       </div>
       <div class="founder-text reveal">
-        <span class="kicker">创始人故事</span>
-        <h2 class="display-sm">15 年，只做一件事</h2>
-        <p class="quote">"让热爱生活的人，享受植物的美和乐趣。"</p>
-        <p>2010 年，一次日本京都庭院植物之旅，让戴晓东深深感受到了东方植物美学的力量。那些精心修剪的松树、随四季变化的庭院，与空间恰到好处的融合，点燃了他心中的热爱。</p>
-        <p>随后他持续游学日本、韩国与台湾地区，积累了丰富的植物空间设计经验。绿趣坚持以植物美学为核心，从第一盆小型盆景到为银行、企业做大型空间，这颗初心已延续 15 年。</p>
-        <p class="sign">— 戴晓东 · 绿趣创始人</p>
+        <span class="kicker" id="founderKicker">创始人故事</span>
+        <h2 class="display-sm" id="founderTitle">15 年，只做一件事</h2>
+        <p class="quote" id="founderQuote">"让热爱生活的人，享受植物的美和乐趣。"</p>
+        <p id="founderPara1">2010 年，一次日本京都庭院植物之旅，让戴晓东深深感受到了东方植物美学的力量。那些精心修剪的松树、随四季变化的庭院，与空间恰到好处的融合，点燃了他心中的热爱。</p>
+        <p id="founderPara2">随后他持续游学日本、韩国与台湾地区，积累了丰富的植物空间设计经验。绿趣坚持以植物美学为核心，从第一盆小型盆景到为银行、企业做大型空间，这颗初心已延续 15 年。</p>
+        <p class="sign" id="founderSign">— 戴晓东 · 绿趣创始人</p>
       </div>
     </div>
   </section>
@@ -231,7 +231,7 @@
         <span class="kicker">Milestones</span>
         <h2 class="display">每一步，都算数</h2>
       </div>
-      <div class="timeline-list">
+      <div class="timeline-list" id="timelineList">
         <div class="timeline-item reveal"><span class="year">2010</span><div class="event"><h4>品牌创立</h4><p>戴晓东创办绿趣，开始室内绿植设计服务探索之路。</p></div></div>
         <div class="timeline-item reveal"><span class="year">2013</span><div class="event"><h4>公司正式注册</h4><p>温州绿趣植物空间艺术科技有限公司正式成立。</p></div></div>
         <div class="timeline-item reveal"><span class="year">2016</span><div class="event"><h4>客户突破 100 家</h4><p>完成机关事业单位、商业空间等标杆项目，品牌影响力快速提升。</p></div></div>
@@ -286,10 +286,10 @@
         <span class="kicker">Get in touch</span>
         <h2 class="display-sm">预约免费<br>上门设计</h2>
         <div class="info-list">
-          <div class="info-item"><span class="info-icon">📍</span><div><strong>公司地址</strong><p>浙江省温州市鹿城区六虹桥路991号</p></div></div>
-          <div class="info-item"><span class="info-icon">📞</span><div><strong>咨询电话</strong><p>0577-88868293</p></div></div>
-          <div class="info-item"><span class="info-icon">💬</span><div><strong>微信咨询</strong><p>扫码添加绿趣客服微信</p></div></div>
-          <div class="info-item"><span class="info-icon">🕐</span><div><strong>服务时间</strong><p>周一至周六 8:30-17:30</p></div></div>
+          <div class="info-item"><span class="info-icon">📍</span><div><strong>公司地址</strong><p id="contactAddress">浙江省温州市鹿城区六虹桥路991号</p></div></div>
+          <div class="info-item"><span class="info-icon">📞</span><div><strong>咨询电话</strong><p id="contactPhone">0577-88868293</p></div></div>
+          <div class="info-item"><span class="info-icon">💬</span><div><strong>微信咨询</strong><p id="contactWechat">扫码添加绿趣客服微信</p></div></div>
+          <div class="info-item"><span class="info-icon">🕐</span><div><strong>服务时间</strong><p id="contactHours">周一至周六 8:30-17:30</p></div></div>
         </div>
         <div class="map-card"></div>
       </div>
@@ -326,15 +326,15 @@
   <footer class="footer">
     <div class="container footer-grid">
       <div class="footer-brand">
-        <div class="logo"><span class="logo-icon">🌿</span><span class="logo-text">绿趣</span></div>
-        <p>温州绿趣植物空间艺术科技有限公司<br>15年专注室内绿植设计<br>让植物成为空间的加分项</p>
+        <div class="logo"><span class="logo-icon" id="footerLogoIcon">🌿</span><span class="logo-text" id="footerLogoText">绿趣</span></div>
+        <p id="footerDesc">温州绿趣植物空间艺术科技有限公司<br>15年专注室内绿植设计<br>让植物成为空间的加分项</p>
         <div class="socials">
           <a href="#" aria-label="微信">📱</a>
           <a href="#" aria-label="抖音">🎵</a>
           <a href="#" aria-label="小红书">📕</a>
         </div>
       </div>
-      <div class="footer-links">
+      <div class="footer-links" id="footerLinks">
         <h4>服务项目</h4>
         <a href="#services">单位绿植租赁</a>
         <a href="#services">家庭植物软装</a>
@@ -360,7 +360,7 @@
     </div>
     <div class="footer-bottom">
       <div class="container">
-        <p>© 2025 温州绿趣植物空间艺术科技有限公司 版权所有 · 浙ICP备XXXXXXXX号</p>
+        <p id="footerCopyright">© 2025 温州绿趣植物空间艺术科技有限公司 版权所有 · 浙ICP备XXXXXXXX号</p>
       </div>
     </div>
   </footer>

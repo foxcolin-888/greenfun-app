@@ -513,6 +513,16 @@ def init_db():
         conn.execute("ALTER TABLE contents ADD COLUMN meta TEXT")
     except Exception:
         pass  # 旧库已有该列
+    try:
+        conn.execute("ALTER TABLE contents ADD COLUMN icon TEXT")
+    except Exception:
+        pass  # 旧库已有该列
+    # 全站可自定义文案与外观（后台「站点装修」模块管理；key-value 存各区块 JSON）
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS site_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""")
     # 积分账户与流水
     c.execute("""
     CREATE TABLE IF NOT EXISTS credits (
@@ -582,6 +592,11 @@ def init_db():
         _seed_site_content(conn)
     except Exception as e:
         print("[seed] 官网内容种子失败:", e, flush=True)
+    # 种子：全站可自定义文案与外观（全新库自动播种）
+    try:
+        _seed_site_meta(conn)
+    except Exception as e:
+        print("[seed] 站点配置种子失败:", e, flush=True)
 
     conn.close()
 
@@ -616,6 +631,135 @@ def _seed_site_content(conn):
                  it.get("meta", ""),
                  int(it.get("sort", 0)), int(it.get("status", 1)), t, t))
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# 全站可自定义文案与外观（后台「站点装修」模块管理）
+#   site_meta 表以 key-value 存储各区块 JSON；前端拉取后渲染。
+# ---------------------------------------------------------------------------
+def _default_site_meta():
+    """默认全站文案（首次部署与 Render 重启重建时的兜底内容，与官网首页原静态文案一致）。"""
+    return {
+        "hero": {
+            "kicker": "EST. 2010 · 室内绿植空间美学专家",
+            "title": ["让植物", "成为空间的加分项"],
+            "desc": "以差异化的植物美学设计，让热爱生活的人享受植物的美与乐趣。温州绿趣植物空间艺术科技有限公司，为商业与家庭空间注入自然生命力。",
+            "cta1": "预约免费设计", "cta1_href": "#contact",
+            "cta2": "了解服务 →", "cta2_href": "#services",
+            "photo": "",
+        },
+        "about": {
+            "kicker": "关于绿趣",
+            "title": ["15 年深耕，", "用植物重新定义", "空间价值"],
+            "lead": "我们不仅提供绿植，更提供一种与自然共生的生活方式。每一位绿趣人都是植物美学的传递者，用专业与热爱，为每一个空间注入生命的力量。",
+            "values": [
+                {"label": "品牌理念", "text": "让热爱生活的人，享受植物的美和乐趣"},
+                {"label": "核心理念", "text": "融合自然，融美于居"},
+                {"label": "服务承诺", "text": "科学设计、美学方案、场景化布置全流程服务"},
+            ],
+            "photo": "",
+            "chip_title": "城市森林会客厅", "chip_sub": "杨府山公园 · 映秀山房",
+        },
+        "stats": [
+            {"num": "15", "suffix": "", "label": "年行业深耕"},
+            {"num": "300", "suffix": "+", "label": "企业客户"},
+            {"num": "92", "suffix": "%", "label": "续约率"},
+            {"num": "600", "suffix": "+", "label": "经典案例"},
+            {"num": "38", "suffix": "", "label": "人专业团队"},
+        ],
+        "voices": [
+            {"quote": "绿趣团队对植物的呈现超出预期。他们不只是摆放几盆花，而是真正把室内外空间当作一个整体来设计，每次方案都让我们惊喜。", "name": "华夏银行温州分行", "role": "行政部负责人", "avatar": "华"},
+            {"quote": "和绿趣合作的植物租赁已经第七年，专业及时的养护响应让我们省心，绿植状态始终保持得很好。", "name": "温州机场集团", "role": "物业管理部门", "avatar": "温"},
+            {"quote": "家里的阳台原本堆满杂物，绿趣帮我们变成了全家人最喜欢待的地方。科学养护方案让植物一直长得很好，四季都有生机。", "name": "陈女士", "role": "家庭植物软装客户", "avatar": "陈"},
+        ],
+        "founder": {
+            "kicker": "创始人故事", "title": "15 年，只做一件事",
+            "quote": "让热爱生活的人，享受植物的美和乐趣。",
+            "paras": [
+                "2010 年，一次日本京都庭院植物之旅，让戴晓东深深感受到了东方植物美学的力量。那些精心修剪的松树、随四季变化的庭院，与空间恰到好处的融合，点燃了他心中的热爱。",
+                "随后他持续游学日本、韩国与台湾地区，积累了丰富的植物空间设计经验。绿趣坚持以植物美学为核心，从第一盆小型盆景到为银行、企业做大型空间，这颗初心已延续 15 年。",
+            ],
+            "sign": "— 戴晓东 · 绿趣创始人",
+            "photo": "", "card_title": "城市森林会客厅", "card_sub": "杨府山公园 · 映秀山房",
+        },
+        "timeline": [
+            {"year": "2010", "title": "品牌创立", "desc": "戴晓东创办绿趣，开始室内绿植设计服务探索之路。"},
+            {"year": "2013", "title": "公司正式注册", "desc": "温州绿趣植物空间艺术科技有限公司正式成立。"},
+            {"year": "2016", "title": "客户突破 100 家", "desc": "完成机关事业单位、商业空间等标杆项目，品牌影响力快速提升。"},
+            {"year": "2019", "title": "家庭植物软装首创", "desc": "区域行业首创“家庭植物软装”服务，开辟全新业务板块。"},
+            {"year": "2023", "title": "美学课程体系成型", "desc": "累计授课 600+ 场，触达 10000+ 人。"},
+            {"year": "2024", "title": "六大板块全面布局", "desc": "春节销售 1600 盆，行业培训 102 名学员，进入全新发展阶段。"},
+            {"year": "2025", "title": "迈向未来", "desc": "300+ 企业客户，92% 续约率，持续以植物美学赋能更多空间。"},
+        ],
+        "contact": {
+            "address": "浙江省温州市鹿城区六虹桥路991号",
+            "phone": "0577-88868293",
+            "wechat": "扫码添加绿趣客服微信",
+            "hours": "周一至周六 8:30-17:30",
+        },
+        "footer": {
+            "desc": "温州绿趣植物空间艺术科技有限公司<br>15年专注室内绿植设计<br>让植物成为空间的加分项",
+            "links": [
+                {"group": "服务项目", "items": [{"label": "单位绿植租赁", "href": "#services"}, {"label": "家庭植物软装", "href": "#services"}, {"label": "艺术盆栽零售", "href": "#services"}, {"label": "美学手作课程", "href": "#services"}, {"label": "行业培训", "href": "#services"}, {"label": "茶饮咖啡", "href": "#services"}]},
+                {"group": "关于绿趣", "items": [{"label": "品牌故事", "href": "#about"}, {"label": "经典案例", "href": "#cases"}, {"label": "植物美学课堂", "href": "#classroom"}, {"label": "加盟合作", "href": "#partner"}, {"label": "联系我们", "href": "#contact"}]},
+                {"group": "关注我们", "items": [{"label": "微信公众号", "href": "#"}, {"label": "二维码入口", "href": "#"}, {"label": "内部管理系统", "href": "/admin"}]},
+            ],
+            "copyright": "© 2025 温州绿趣植物空间艺术科技有限公司 版权所有 · 浙ICP备XXXXXXXX号",
+        },
+        "nav": [
+            {"label": "首页", "href": "#home"},
+            {"label": "关于我们", "href": "#about"},
+            {"label": "服务项目", "href": "#services"},
+            {"label": "经典案例", "href": "#cases"},
+            {"label": "美学课堂", "href": "#classroom"},
+            {"label": "加盟合作", "href": "#partner"},
+            {"label": "预约咨询", "href": "#contact", "cta": True},
+        ],
+        "appearance": {
+            "font_preset": "serif",
+            "primary_color": "#2D5A27",
+            "logo_url": "",
+            "favicon": "",
+        },
+    }
+
+
+def _seed_site_meta(conn):
+    """全新库自动播种全站可自定义文案与外观（保证 Render 重启后官网内容不丢）。已存在则跳过。"""
+    defaults = _default_site_meta()
+    for k, v in defaults.items():
+        conn.execute("INSERT OR IGNORE INTO site_meta (key, value) VALUES (?,?)",
+                     (k, json.dumps(v, ensure_ascii=False)))
+    conn.commit()
+
+
+def _get_site_config():
+    """读取全站配置；缺失区块用默认值补全，避免前端缺字段。"""
+    conn = get_db()
+    rows = conn.execute("SELECT key, value FROM site_meta").fetchall()
+    conn.close()
+    cfg = {}
+    for r in rows:
+        try:
+            cfg[r["key"]] = json.loads(r["value"])
+        except Exception:
+            cfg[r["key"]] = r["value"]
+    for k, v in _default_site_meta().items():
+        cfg.setdefault(k, v)
+    return cfg
+
+
+def _save_site_config(body):
+    """保存全站配置（逐区块写回 site_meta）。"""
+    if not isinstance(body, dict):
+        return {"error": "数据格式错误"}
+    conn = get_db()
+    for k, v in body.items():
+        conn.execute("INSERT OR REPLACE INTO site_meta (key, value) VALUES (?,?)",
+                     (str(k), json.dumps(v, ensure_ascii=False)))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 def _seed_env_settings(conn):
@@ -1299,6 +1443,13 @@ class Handler(BaseHTTPRequestHandler):
             if u["role"] not in ("admin", "manager", "designer"):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._list_contents(public_only=False))
+        # 全站可自定义文案与外观（公开接口，官网渲染使用）
+        if path == "/api/site":
+            return self._json(_get_site_config())
+        if path == "/api/site/edit":
+            if u["role"] not in ("admin", "manager"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(_get_site_config())
         if path.startswith("/api/customers/"):
             parts = path.split("/")
             cid = parts[3] if len(parts) > 3 else None
@@ -1466,6 +1617,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(self._update_content(ctid, body))
                 if method == "DELETE":
                     return self._json(self._delete_content(ctid))
+
+        # 站点装修：保存全站文案与外观（管理员/店长）
+        if path == "/api/site" and method == "PUT":
+            if u["role"] not in ("admin", "manager"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(_save_site_config(body))
+
+        # 站点配图上传（管理员/店长/设计师），folder=site 用于全站背景/配图/Logo 等
+        if path == "/api/upload" and method == "POST":
+            if u["role"] not in ("admin", "manager", "designer"):
+                return self._json({"error": "无权限"}, 403)
+            return self._json(self._scheme_upload({**body, "folder": body.get("folder") or "site"}))
 
         return self._json({"error": "unknown"}, 404)
 
@@ -2015,7 +2178,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _scheme_upload(self, body):
         folder = (body.get("folder") or "schemes").strip() or "schemes"
-        if folder not in ("schemes", "cases", "content"):
+        if folder not in ("schemes", "cases", "content", "site"):
             folder = "schemes"
         data = body.get("data", "")
         if "," in data:
@@ -2529,7 +2692,7 @@ class Handler(BaseHTTPRequestHandler):
     # ---- 官网通用内容（服务 / 课程活动 / 伙伴 / 团队 / 创始人） ----
     def _list_contents(self, public_only=False, ctype=None):
         conn = get_db()
-        sql = "SELECT id, type, title, summary, cover, meta, sort FROM contents"
+        sql = "SELECT id, type, title, summary, cover, meta, icon, sort FROM contents"
         where, args = [], []
         if public_only:
             where.append("status=1")
@@ -2563,12 +2726,12 @@ class Handler(BaseHTTPRequestHandler):
             return {"error": "缺少 type"}
         conn = get_db()
         cur = conn.execute(
-            """INSERT INTO contents (type, title, summary, cover, detail, gallery, meta, sort, status, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO contents (type, title, summary, cover, detail, gallery, meta, icon, sort, status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (ctype, body.get("title", "").strip(), body.get("summary", ""),
              body.get("cover", ""), body.get("detail", ""),
              json.dumps(body.get("gallery", []), ensure_ascii=False),
-             body.get("meta", ""),
+             body.get("meta", ""), body.get("icon", ""),
              to_int(body.get("sort", 0)), to_int(body.get("status", 1)), t, t))
         ctid = cur.lastrowid
         conn.commit()
@@ -2588,11 +2751,11 @@ class Handler(BaseHTTPRequestHandler):
         elif not isinstance(gallery, list):
             gallery = []
         conn.execute(
-            """UPDATE contents SET type=?, title=?, summary=?, cover=?, detail=?, gallery=?, meta=?, sort=?, status=?, updated_at=? WHERE id=?""",
+            """UPDATE contents SET type=?, title=?, summary=?, cover=?, detail=?, gallery=?, meta=?, icon=?, sort=?, status=?, updated_at=? WHERE id=?""",
             (body.get("type", r["type"]).strip(), body.get("title", r["title"]).strip(),
              body.get("summary", r["summary"]), body.get("cover", r["cover"]),
              body.get("detail", r["detail"]), json.dumps(gallery, ensure_ascii=False),
-             body.get("meta", r.get("meta", "")),
+             body.get("meta", r.get("meta", "")), body.get("icon", r.get("icon", "")),
              to_int(body.get("sort", r["sort"])), to_int(body.get("status", r["status"])), t, ctid))
         conn.commit()
         conn.close()

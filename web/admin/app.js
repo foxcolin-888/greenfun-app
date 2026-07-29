@@ -213,6 +213,7 @@ async function switchView(v) {
   if (v === 'quote') return renderQuote();
   if (v === 'scheme') return renderScheme();
   if (v === 'cases') return renderCases();
+  if (v === 'site') return renderSite();
   if (v === 'contacts') return renderContacts();
   if (v === 'forms') return renderForms();
   if (v === 'stats') return renderStats();
@@ -1735,6 +1736,274 @@ async function uploadCaseImage(file) {
     if (r.error) throw new Error(r.error);
     return r.url;
   } catch (err) { toast('上传失败：' + err.message); return null; }
+}
+
+// ===================== 站点装修（全站可自定义后台） =====================
+const SITE_CSS = `
+.site-tabs{display:flex;gap:8px;margin:14px 0}
+.site-tab{padding:8px 16px;border:1px solid var(--hair);border-radius:20px;background:#fff;cursor:pointer;font-size:14px;color:var(--text)}
+.site-tab.active{background:var(--primary-green);color:#fff;border-color:var(--primary-green)}
+.site-pane{max-width:920px}
+.site-sec{background:#fff;border:1px solid var(--hair);border-radius:14px;padding:16px 18px;margin-bottom:16px}
+.site-sec h4{margin-bottom:10px;color:var(--green-900);font-family:var(--font-serif)}
+.site-sec label{display:block;font-size:12px;color:var(--text-muted);margin:10px 0 4px}
+.site-sec input,.site-sec textarea,.site-sec select{width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box}
+.srows{display:flex;flex-direction:column;gap:8px}
+.srow{display:flex;gap:6px;align-items:center}
+.srow textarea{flex:1;min-height:38px;font-family:inherit}
+.srow-del{background:#fff;border:1px solid var(--hair);border-radius:6px;width:30px;height:30px;cursor:pointer;color:#c0392b;flex:0 0 auto}
+.add-row{margin-top:8px}
+.fgroup{border:1px dashed var(--hair);border-radius:10px;padding:10px;margin-bottom:10px}
+.fitems{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.site-ctab{padding:8px 14px;border:1px solid var(--hair);border-radius:8px;background:#fff;cursor:pointer;margin-right:6px;font-size:13px}
+.site-ctab.active{background:var(--primary-green);color:#fff}
+.content-list{display:flex;flex-direction:column;gap:10px}
+.content-card{display:flex;gap:12px;align-items:center;background:#fff;border:1px solid var(--hair);border-radius:12px;padding:12px}
+.cc-icon{font-size:26px;width:48px;text-align:center;flex:0 0 auto}
+.cc-main{flex:1;min-width:0}
+.cc-title{font-weight:600;color:var(--green-900)}
+.cc-sum{font-size:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-meta{font-size:12px;color:var(--text-muted);margin-top:4px}
+.cc-ops{display:flex;gap:6px;flex:0 0 auto}
+.hint{font-size:12px;color:var(--text-muted);margin-top:8px}
+`;
+async function uploadSiteImage(file) {
+  try {
+    const dataUrl = await readFileAsDataURL(file);
+    const r = await api('POST', '/upload', { data: dataUrl, folder: 'site' });
+    if (r.error) throw new Error(r.error);
+    return r.url;
+  } catch (err) { toast('上传失败：' + err.message); return null; }
+}
+const SITE_TPL = {
+  value: (d)=>`<div class="srow" data-row><input data-f="label" value="${esc(d.label||'')}" placeholder="小标题"><input data-f="text" value="${esc(d.text||'')}" placeholder="说明文字"><button class="srow-del" type="button" title="删除">✕</button></div>`,
+  stat: (d)=>`<div class="srow" data-row><input data-f="num" value="${esc(d.num||'')}" placeholder="数字" style="width:80px"><input data-f="suffix" value="${esc(d.suffix||'')}" placeholder="后缀" style="width:50px"><input data-f="label" value="${esc(d.label||'')}" placeholder="标签"><button class="srow-del" type="button" title="删除">✕</button></div>`,
+  voice: (d)=>`<div class="srow" data-row><input data-f="avatar" value="${esc(d.avatar||'')}" placeholder="头像字" style="width:60px"><input data-f="name" value="${esc(d.name||'')}" placeholder="姓名" style="width:120px"><input data-f="role" value="${esc(d.role||'')}" placeholder="身份" style="width:120px"><textarea data-f="quote" placeholder="评价内容">${esc(d.quote||'')}</textarea><button class="srow-del" type="button" title="删除">✕</button></div>`,
+  timeline:(d)=>`<div class="srow" data-row><input data-f="year" value="${esc(d.year||'')}" placeholder="年份" style="width:70px"><input data-f="title" value="${esc(d.title||'')}" placeholder="标题" style="width:140px"><input data-f="desc" value="${esc(d.desc||'')}" placeholder="描述"><button class="srow-del" type="button" title="删除">✕</button></div>`,
+  nav: (d)=>`<div class="srow" data-row><input data-f="label" value="${esc(d.label||'')}" placeholder="名称" style="width:120px"><input data-f="href" value="${esc(d.href||'')}" placeholder="链接如 #about" style="width:140px"><label style="display:flex;gap:4px;align-items:center;font-size:12px"><input type="checkbox" data-f="cta" ${d.cta?'checked':''}>高亮</label><button class="srow-del" type="button" title="删除">✕</button></div>`,
+  flink: (d)=>`<div class="srow" data-row><input data-f="label" value="${esc(d.label||'')}" placeholder="名称" style="width:140px"><input data-f="href" value="${esc(d.href||'')}" placeholder="链接" style="width:160px"><button class="srow-del" type="button" title="删除">✕</button></div>`,
+};
+function rowsHtml(tpl, arr){ return (arr||[]).map(it=>SITE_TPL[tpl](it)).join(''); }
+function collectRows(container){ return Array.from(container.querySelectorAll('[data-row]')).map(r=>{ const o={}; r.querySelectorAll('[data-f]').forEach(el=>{ o[el.dataset.f]= el.type==='checkbox'? el.checked : el.value; }); return o; }); }
+function bindSiteRows(root){
+  root.querySelectorAll('[data-add]').forEach(btn=>btn.addEventListener('click',()=>{ const c=$(btn.dataset.add); const tpl=btn.dataset.tpl; if(c&&SITE_TPL[tpl]) c.insertAdjacentHTML('beforeend', SITE_TPL[tpl]({})); }));
+  root.addEventListener('click', e=>{ if(e.target.classList.contains('srow-del')){ const row=e.target.closest('[data-row]'); if(row) row.remove(); } });
+}
+function bindSiteImg(root, fileId, urlId){
+  const f=$('#'+fileId, root); if(!f) return;
+  f.addEventListener('change', async e=>{ const file=e.target.files[0]; if(!file) return; const url=await uploadSiteImage(file); if(url){ const u=$('#'+urlId, root); if(u) u.value=url; toast('已上传'); } });
+}
+
+async function renderSite(){
+  if(!document.getElementById('site-style')){ const st=document.createElement('style'); st.id='site-style'; st.textContent=SITE_CSS; document.head.appendChild(st); }
+  const cfg = await api('GET','/site/edit');
+  if(cfg.error) return toast('加载失败：'+cfg.error);
+  state.site = cfg||{};
+  const s = state.site;
+  $('#app').innerHTML = `
+    <div class="toolbar">
+      <h3 style="font-family:var(--font-serif);font-size:18px;color:var(--green-900)">站点装修 · 全站可自定义</h3>
+      <span class="spacer"></span>
+      <button class="btn" id="siteSaveAll">保存全部更改</button>
+    </div>
+    <div class="site-tabs">
+      <button class="site-tab active" data-tab="copy">文案区块</button>
+      <button class="site-tab" data-tab="content">内容卡片</button>
+      <button class="site-tab" data-tab="appearance">外观主题</button>
+    </div>
+    <div id="siteBody"></div>`;
+  $$('.site-tab').forEach(b=>b.addEventListener('click',()=>{ $$('.site-tab').forEach(x=>x.classList.remove('active')); b.classList.add('active'); siteRenderTab(b.dataset.tab); }));
+  $('#siteSaveAll').addEventListener('click', saveSiteAll);
+  siteRenderTab('copy');
+}
+function siteRenderTab(tab){
+  const body=$('#siteBody'); if(!body) return;
+  if(tab==='content'){ siteRenderContent(body); return; }
+  if(tab==='appearance'){ siteRenderAppearance(body); return; }
+  siteRenderCopy(body);
+}
+function txtLines(arrOrStr){ return Array.isArray(arrOrStr)? arrOrStr.join('\n') : (arrOrStr||''); }
+function siteRenderCopy(body){
+  const s=state.site||{};
+  const g=(k,def)=> (s[k]!=null? s[k] : def);
+  body.innerHTML = `
+  <div class="site-pane">
+    <div class="site-sec"><h4>首屏 Hero</h4>
+      <label>小标签</label><input id="hero_kicker" value="${esc(g('hero',{}).kicker||'')}">
+      <label>主标题（每行一句，换行分隔）</label><textarea id="hero_title" rows="2">${esc(txtLines(g('hero',{}).title))}</textarea>
+      <label>副标题</label><textarea id="hero_desc" rows="2">${esc(g('hero',{}).desc||'')}</textarea>
+      <label>主按钮文字 / 链接</label><input id="hero_cta1" value="${esc(g('hero',{}).cta1||'')}"><input id="hero_cta1_href" value="${esc(g('hero',{}).cta1_href||'')}" placeholder="链接如 #contact">
+      <label>次按钮文字 / 链接</label><input id="hero_cta2" value="${esc(g('hero',{}).cta2||'')}"><input id="hero_cta2_href" value="${esc(g('hero',{}).cta2_href||'')}" placeholder="链接如 #services">
+      <label>背景图（可选，留空用默认）</label>
+      <div style="display:flex;gap:8px;align-items:center"><input id="hero_photo" value="${esc(g('hero',{}).photo||'')}" placeholder="图片URL" style="flex:1"><input type="file" id="hero_photo_f" accept="image/*"></div>
+    </div>
+
+    <div class="site-sec"><h4>关于我们</h4>
+      <label>小标签</label><input id="about_kicker" value="${esc(g('about',{}).kicker||'')}">
+      <label>标题（换行分隔）</label><textarea id="about_title" rows="2">${esc(txtLines(g('about',{}).title))}</textarea>
+      <label>导语</label><textarea id="about_lead" rows="2">${esc(g('about',{}).lead||'')}</textarea>
+      <label>价值点 <button class="btn sm ghost add-row" data-add="#about_values" data-tpl="value" type="button">+ 添加</button></label>
+      <div id="about_values" class="srows">${rowsHtml('value',g('about',{}).values)}</div>
+      <label>配图（可选）</label><div style="display:flex;gap:8px;align-items:center"><input id="about_photo" value="${esc(g('about',{}).photo||'')}" placeholder="图片URL" style="flex:1"><input type="file" id="about_photo_f" accept="image/*"></div>
+      <label>卡片标题 / 副标题 / 图标</label><input id="about_chip_title" value="${esc(g('about',{}).chip_title||'')}"><input id="about_chip_sub" value="${esc(g('about',{}).chip_sub||'')}"><input id="about_chip_icon" value="${esc(g('about',{}).chip_icon||'🌿')}" style="width:60px">
+    </div>
+
+    <div class="site-sec"><h4>数据条</h4>
+      <div id="stats_list" class="srows">${rowsHtml('stat',g('stats'))}</div>
+      <button class="btn sm ghost add-row" data-add="#stats_list" data-tpl="stat" type="button">+ 添加数据</button>
+    </div>
+
+    <div class="site-sec"><h4>客户心声</h4>
+      <div id="voices_list" class="srows">${rowsHtml('voice',g('voices'))}</div>
+      <button class="btn sm ghost add-row" data-add="#voices_list" data-tpl="voice" type="button">+ 添加评价</button>
+    </div>
+
+    <div class="site-sec"><h4>创始人故事</h4>
+      <label>小标签 / 标题 / 引言</label><input id="fd_kicker" value="${esc(g('founder',{}).kicker||'')}"><input id="fd_title" value="${esc(g('founder',{}).title||'')}"><input id="fd_quote" value="${esc(g('founder',{}).quote||'')}">
+      <label>段落一 / 段落二</label><textarea id="fd_para1" rows="2">${esc(Array.isArray(g('founder',{}).paras)?g('founder',{}).paras[0]||'':'')}</textarea><textarea id="fd_para2" rows="2">${esc(Array.isArray(g('founder',{}).paras)?g('founder',{}).paras[1]||'':'')}</textarea>
+      <label>落款</label><input id="fd_sign" value="${esc(g('founder',{}).sign||'')}">
+      <label>配图（可选）</label><div style="display:flex;gap:8px;align-items:center"><input id="fd_photo" value="${esc(g('founder',{}).photo||'')}" placeholder="图片URL" style="flex:1"><input type="file" id="fd_photo_f" accept="image/*"></div>
+      <label>卡片标题 / 副标题 / 图标</label><input id="fd_card_title" value="${esc(g('founder',{}).card_title||'')}"><input id="fd_card_sub" value="${esc(g('founder',{}).card_sub||'')}"><input id="fd_card_icon" value="${esc(g('founder',{}).card_icon||'🌿')}" style="width:60px">
+    </div>
+
+    <div class="site-sec"><h4>品牌历程</h4>
+      <div id="timeline_list" class="srows">${rowsHtml('timeline',g('timeline'))}</div>
+      <button class="btn sm ghost add-row" data-add="#timeline_list" data-tpl="timeline" type="button">+ 添加节点</button>
+    </div>
+
+    <div class="site-sec"><h4>联系方式</h4>
+      <label>地址</label><input id="ct_address" value="${esc(g('contact',{}).address||'')}">
+      <label>电话</label><input id="ct_phone" value="${esc(g('contact',{}).phone||'')}">
+      <label>微信</label><input id="ct_wechat" value="${esc(g('contact',{}).wechat||'')}">
+      <label>服务时间</label><input id="ct_hours" value="${esc(g('contact',{}).hours||'')}">
+    </div>
+
+    <div class="site-sec"><h4>页脚</h4>
+      <label>简介（可含 &lt;br&gt; 换行）</label><textarea id="ft_desc" rows="2">${esc(g('footer',{}).desc||'')}</textarea>
+      <label>链接分组</label>
+      <div id="ft_groups">${(g('footer',{}).links||[]).map((grp,i)=>`
+        <div class="fgroup">
+          <input data-f="group" value="${esc(grp.group||'')}" placeholder="分组名" style="width:160px;margin-bottom:6px">
+          <div class="fitems" id="ft_items_${i}">${rowsHtml('flink',grp.items||[])}</div>
+          <button class="btn sm ghost add-row" data-add="#ft_items_${i}" data-tpl="flink" type="button">+ 添加链接</button>
+        </div>`).join('')}</div>
+      <label>版权信息</label><input id="ft_copyright" value="${esc(g('footer',{}).copyright||'')}">
+    </div>
+
+    <div class="site-sec"><h4>导航菜单</h4>
+      <div id="nav_list" class="srows">${rowsHtml('nav',g('nav'))}</div>
+      <button class="btn sm ghost add-row" data-add="#nav_list" data-tpl="nav" type="button">+ 添加菜单</button>
+    </div>
+  </div>`;
+  bindSiteRows(body);
+  bindSiteImg(body,'hero_photo_f','hero_photo');
+  bindSiteImg(body,'about_photo_f','about_photo');
+  bindSiteImg(body,'fd_photo_f','fd_photo');
+}
+function siteRenderAppearance(body){
+  const a=state.site.appearance||{};
+  body.innerHTML=`
+  <div class="site-pane">
+    <div class="site-sec"><h4>字体风格</h4>
+      <select id="ap_font">
+        ${[['serif','宋体优雅（默认）'],['sans','黑体现代'],['round','圆体亲和'],['kai','文楷雅致']].map(o=>`<option value="${o[0]}" ${a.font_preset===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+      </select>
+      <p class="hint">切换后官网标题与正文字体整体变更（部分字体首次使用会自动加载）。</p>
+    </div>
+    <div class="site-sec"><h4>主题色</h4>
+      <input type="color" id="ap_color" value="${esc(a.primary_color||'#2D5A27')}" style="width:60px;height:40px;vertical-align:middle">
+      <input id="ap_color_hex" value="${esc(a.primary_color||'#2D5A27')}" style="width:100px">
+      <div id="swatches" style="margin-top:8px">${['#2D5A27','#1f6f43','#2e7d4f','#0f6f8f','#c05621','#7a3b8f','#b03a5b','#34495e'].map(c=>`<span class="swatch" style="display:inline-block;width:26px;height:26px;background:${c};border-radius:6px;cursor:pointer;margin:0 4px" data-color="${c}"></span>`).join('')}</div>
+    </div>
+    <div class="site-sec"><h4>Logo</h4>
+      <label>文字</label><input id="ap_logo_text" value="${esc(a.logo_text||'绿趣')}">
+      <label>图标 Emoji</label><input id="ap_logo_icon" value="${esc(a.logo_icon||'🌿')}" style="width:80px">
+      <label>Logo 图片URL（可选，填了则用图片替代图标）</label><div style="display:flex;gap:8px;align-items:center"><input id="ap_logo_url" value="${esc(a.logo_url||'')}" placeholder="图片URL" style="flex:1"><input type="file" id="ap_logo_url_f" accept="image/*"></div>
+    </div>
+    <p class="hint">修改外观后点击右上角「保存全部更改」生效；也可在「文案区块」页一并保存。</p>
+  </div>`;
+  const colorInput=$('#ap_color'), hexInput=$('#ap_color_hex');
+  colorInput.addEventListener('input',()=>hexInput.value=colorInput.value);
+  hexInput.addEventListener('change',()=>{ if(/^#[0-9a-fA-F]{6}$/.test(hexInput.value)) colorInput.value=hexInput.value; });
+  $$('#swatches .swatch').forEach(sp=>sp.addEventListener('click',()=>{ colorInput.value=sp.dataset.color; hexInput.value=sp.dataset.color; }));
+  const lf=$('#ap_logo_url_f'); if(lf) lf.addEventListener('change',async e=>{ const file=e.target.files[0]; if(!file) return; const url=await uploadSiteImage(file); if(url){ $('#ap_logo_url').value=url; toast('已上传'); } });
+}
+async function siteRenderContent(body){
+  const types=[['service','服务'],['course','课程'],['partner','合作'],['team','团队'],['founder','创始人']];
+  const labels={service:'服务',course:'课程',partner:'合作',team:'团队',founder:'创始人'};
+  state.contentType=state.contentType||'service';
+  body.innerHTML=`<div class="site-sec"><div class="ctab-row" style="margin-bottom:10px">${types.map(t=>`<button class="site-ctab ${state.contentType===t[0]?'active':''}" data-ct="${t[0]}">${t[1]}</button>`).join('')}</div><div id="contentList" class="content-list"></div></div>`;
+  $$('.site-ctab').forEach(b=>b.addEventListener('click',()=>{ state.contentType=b.dataset.ct; $$('.site-ctab').forEach(x=>x.classList.remove('active')); b.classList.add('active'); loadContentList(); }));
+  await loadContentList();
+}
+async function loadContentList(){
+  const type=state.contentType||'service';
+  const list=await api('GET','/contents?type='+type);
+  const arr=Array.isArray(list)?list:[];
+  const box=$('#contentList'); if(!box) return;
+  box.innerHTML=(arr.length?arr.map(c=>`
+    <div class="content-card">
+      <div class="cc-icon">${esc(c.icon||'🌿')}</div>
+      <div class="cc-main"><div class="cc-title">${esc(c.title)}</div><div class="cc-sum">${esc(c.summary||'')}</div><div class="cc-meta">排序 ${c.sort!=null?c.sort:0} · <span class="status-pill ${c.status==1?'st-deal':'st-lead'}">${c.status==1?'上架':'下架'}</span></div></div>
+      <div class="cc-ops"><button class="btn sm ghost" data-edit="${c.id}">编辑</button><button class="btn sm ghost" data-del="${c.id}">删除</button></div>
+    </div>`).join(''):'<p class="hint">该分类暂无内容</p>');
+  const addBtn=document.createElement('button'); addBtn.className='btn'; addBtn.textContent='+ 新建'+( {service:'服务',course:'课程',partner:'合作',team:'团队',founder:'创始人'}[type]||'' ); addBtn.style.marginTop='12px';
+  addBtn.addEventListener('click',()=>openContentEditor(null,type));
+  box.appendChild(addBtn);
+  box.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click',()=>openContentEditor(+b.dataset.edit,type)));
+  box.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{ if(!confirm('确认删除该内容？'))return; const r=await api('DELETE','/contents/'+b.dataset.del); if(r.error)return toast(r.error); toast('已删除'); loadContentList(); }));
+}
+async function openContentEditor(id,type){
+  let c={title:'',summary:'',detail:'',cover:'',icon:'🌿',meta:'',sort:0,status:1,type:type||state.contentType||'service'};
+  if(id){ const d=await api('GET','/contents/'+id); if(d.error)return toast('不存在'); c=d; }
+  state.contentDraft={cover:c.cover||'',gallery:[]};
+  openDrawer();
+  $('#drawerPanel').innerHTML=`
+    <div class="dp-head"><h2>${id?'编辑':'新建'}内容</h2><button class="close" id="dClose">×</button></div>
+    <div class="dp-body">
+      <div class="field"><label>类型</label><select id="ccType">
+        ${[['service','服务'],['course','课程'],['partner','合作'],['team','团队'],['founder','创始人']].map(o=>`<option value="${o[0]}" ${c.type===o[0]?'selected':''}>${o[1]}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>图标 Emoji</label><input id="ccIcon" value="${esc(c.icon||'🌿')}" style="width:80px" placeholder="🌿"></div>
+      <div class="field full"><label>标题 *</label><input id="ccTitle" value="${esc(c.title)}"></div>
+      <div class="field full"><label>摘要（卡片展示）</label><textarea id="ccSummary" rows="2">${esc(c.summary||'')}</textarea></div>
+      <div class="field full"><label>详情（支持 HTML）</label><textarea id="ccDetail" rows="6">${esc(c.detail||'')}</textarea></div>
+      <div class="field"><label>排序（越小越靠前）</label><input id="ccSort" type="number" value="${c.sort!=null?c.sort:0}"></div>
+      <div class="field"><label>状态</label><select id="ccStatus"><option value="1" ${c.status==1?'selected':''}>上架</option><option value="0" ${c.status==0?'selected':''}>下架</option></select></div>
+      <div class="field full"><label>附加信息（如价格/时长）</label><input id="ccMeta" value="${esc(c.meta||'')}"></div>
+      <div class="field full"><label>封面图</label><div style="display:flex;gap:8px;align-items:center"><input id="ccCover" value="${esc(c.cover||'')}" placeholder="图片URL" style="flex:1"><input type="file" id="ccCoverF" accept="image/*"></div><div id="ccCoverBox" style="margin-top:6px">${c.cover?`<img src="${esc(c.cover)}" style="max-width:180px;border-radius:8px">`:''}</div></div>
+      <div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="ccSave">保存</button><button class="btn ghost" id="ccCancel">取消</button></div>
+    </div>`;
+  $('#dClose').addEventListener('click',closeDrawer);
+  $('#ccCancel').addEventListener('click',closeDrawer);
+  $('#ccCoverF').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f)return; const url=await uploadSiteImage(f); if(url){ state.contentDraft.cover=url; $('#ccCover').value=url; $('#ccCoverBox').innerHTML=`<img src="${esc(url)}" style="max-width:180px;border-radius:8px">`; toast('已上传'); } });
+  $('#ccSave').addEventListener('click',async()=>{
+    const title=$('#ccTitle').value.trim(); if(!title)return toast('请填写标题');
+    const body2={type:$('#ccType').value,title,summary:$('#ccSummary').value,detail:$('#ccDetail').value,cover:state.contentDraft.cover||'',icon:$('#ccIcon').value,meta:$('#ccMeta').value,sort:+$('#ccSort').value||0,status:+$('#ccStatus').value||1};
+    let r; if(id) r=await api('PUT','/contents/'+id,body2); else r=await api('POST','/contents',body2);
+    if(r.error)return toast(r.error);
+    toast('已保存'); closeDrawer(); loadContentList();
+  });
+}
+async function saveSiteAll(){
+  const s=state.site||{};
+  const get=v=>{const el=$('#'+v); return el?el.value:'';};
+  const lines=v=>get(v).split('\n').map(x=>x.trim()).filter(Boolean);
+  s.hero={kicker:get('hero_kicker'),title:lines('hero_title'),desc:get('hero_desc'),cta1:get('hero_cta1'),cta1_href:get('hero_cta1_href'),cta2:get('hero_cta2'),cta2_href:get('hero_cta2_href'),photo:get('hero_photo')};
+  s.about={kicker:get('about_kicker'),title:lines('about_title'),lead:get('about_lead'),values:collectRows($('#about_values')),photo:get('about_photo'),chip_title:get('about_chip_title'),chip_sub:get('about_chip_sub'),chip_icon:get('about_chip_icon')};
+  s.stats=collectRows($('#stats_list'));
+  s.voices=collectRows($('#voices_list'));
+  s.founder={kicker:get('fd_kicker'),title:get('fd_title'),quote:get('fd_quote'),paras:[get('fd_para1'),get('fd_para2')],sign:get('fd_sign'),photo:get('fd_photo'),card_title:get('fd_card_title'),card_sub:get('fd_card_sub'),card_icon:get('fd_card_icon')};
+  s.timeline=collectRows($('#timeline_list'));
+  s.contact={address:get('ct_address'),phone:get('ct_phone'),wechat:get('ct_wechat'),hours:get('ct_hours')};
+  s.footer={desc:get('ft_desc'),links:Array.from($$('#ft_groups .fgroup')).map(grp=>({group:grp.querySelector('[data-f="group"]').value,items:collectRows(grp.querySelector('.fitems'))})),copyright:get('ft_copyright')};
+  s.nav=collectRows($('#nav_list'));
+  const ap=state.site.appearance||{};
+  if($('#ap_font')){ ap.font_preset=$('#ap_font').value; ap.primary_color=$('#ap_color_hex').value||$('#ap_color').value; ap.logo_text=$('#ap_logo_text').value; ap.logo_icon=$('#ap_logo_icon').value; ap.logo_url=$('#ap_logo_url').value; }
+  s.appearance=ap;
+  const r=await api('PUT','/site',s);
+  if(r.error) return toast('保存失败：'+r.error);
+  toast('已保存，刷新官网即可生效');
 }
 
 init();
