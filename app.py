@@ -1386,6 +1386,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/contents/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
             return self._json(self._content_detail(int(path.split("/")[3])))
 
+        # 全站可自定义文案与外观（公开接口，官网渲染使用，无需登录）
+        if path == "/api/site":
+            return self._json(_get_site_config())
+
         u = self._need()
         if not u:
             return
@@ -1443,9 +1447,7 @@ class Handler(BaseHTTPRequestHandler):
             if u["role"] not in ("admin", "manager", "designer"):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._list_contents(public_only=False))
-        # 全站可自定义文案与外观（公开接口，官网渲染使用）
-        if path == "/api/site":
-            return self._json(_get_site_config())
+        # 全站可自定义文案与外观（编辑接口，需登录，见上方公开 GET /api/site）
         if path == "/api/site/edit":
             if u["role"] not in ("admin", "manager"):
                 return self._json({"error": "无权限"}, 403)
