@@ -577,7 +577,45 @@ def init_db():
     # 付款方式迁移：新版默认方案自动追加到已有库，避免老库缺少新选项
     _migrate_payment_methods(conn)
 
+    # 种子：官网案例与通用内容（全新库自动播种；Render 免费版重启重建后内容不丢）
+    try:
+        _seed_site_content(conn)
+    except Exception as e:
+        print("[seed] 官网内容种子失败:", e, flush=True)
+
     conn.close()
+
+
+def _seed_site_content(conn):
+    """全新库自动播种官网案例与通用内容（服务/课程/伙伴/团队/创始人）。
+    Render 免费版磁盘随重建重置，此函数确保每次重建后官网内容仍在。
+    已有数据时不覆盖（管理员后台编辑的内容优先）。"""
+    seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed_data.json")
+    if not os.path.exists(seed_path):
+        return
+    with open(seed_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    t = now_str()
+    # 官网案例
+    if conn.execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 0:
+        for it in data.get("cases", []):
+            conn.execute(
+                "INSERT INTO cases (title, category, summary, cover, detail, gallery, sort, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (it.get("title", ""), it.get("category", ""), it.get("summary", ""),
+                 it.get("cover", ""), it.get("detail", ""),
+                 json.dumps(it.get("gallery", []), ensure_ascii=False),
+                 int(it.get("sort", 0)), int(it.get("status", 1)), t, t))
+    # 官网通用内容（服务 / 课程 / 伙伴 / 团队 / 创始人）
+    if conn.execute("SELECT COUNT(*) FROM contents").fetchone()[0] == 0:
+        for it in data.get("contents", []):
+            conn.execute(
+                "INSERT INTO contents (type, title, summary, cover, detail, gallery, meta, sort, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (it.get("type", ""), it.get("title", ""), it.get("summary", ""),
+                 it.get("cover", ""), it.get("detail", ""),
+                 json.dumps(it.get("gallery", []), ensure_ascii=False),
+                 it.get("meta", ""),
+                 int(it.get("sort", 0)), int(it.get("status", 1)), t, t))
+    conn.commit()
 
 
 def _seed_env_settings(conn):

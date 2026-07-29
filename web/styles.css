@@ -89,23 +89,25 @@ ul { list-style: none; }
 @media (prefers-reduced-motion: reduce) { .leaf-float-layer { display: none; } }
 
 /* ---------- 导航 ---------- */
-.navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 20px 0; transition: background .35s, box-shadow .35s, padding .35s; }
-.navbar.scrolled { background: rgba(251,250,245,.94); backdrop-filter: blur(14px); box-shadow: 0 2px 26px rgba(22,51,26,.07); padding: 13px 0; }
+.navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 14px 0; background: rgba(251,250,245,.85); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 18px rgba(22,51,26,.05); transition: background .35s, box-shadow .35s, padding .35s; }
+.navbar.scrolled { background: rgba(251,250,245,.96); box-shadow: 0 2px 26px rgba(22,51,26,.08); padding: 10px 0; }
+/* 深色 hero 页面：顶部未滚动时恢复透明白字编辑式效果，滚动后回到浅底深字 */
+.has-dark-hero .navbar:not(.scrolled) { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; padding: 20px 0; }
 .nav-inner { width: 90%; max-width: var(--max-width); margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
 .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 22px; }
 .logo-icon { font-size: 26px; }
-.logo-text { color: #fff; font-family: var(--font-serif); letter-spacing: 2px; transition: color .35s; }
-.navbar.scrolled .logo-text { color: var(--primary-green); }
+.logo-text { color: var(--primary-green); font-family: var(--font-serif); letter-spacing: 2px; transition: color .35s; }
+.has-dark-hero .navbar:not(.scrolled) .logo-text { color: #fff; }
 .nav-links { display: flex; align-items: center; gap: 32px; }
-.nav-links a { color: rgba(255,255,255,.92); font-size: 14px; font-weight: 500; transition: color .2s; position: relative; }
+.nav-links a { color: var(--text); font-size: 14px; font-weight: 500; transition: color .2s; position: relative; }
 .nav-links a:not(.nav-cta)::after { content: ""; position: absolute; left: 0; bottom: -6px; width: 0; height: 2px; background: currentColor; transition: width .25s; }
 .nav-links a:not(.nav-cta):hover::after { width: 100%; }
-.navbar.scrolled .nav-links a { color: var(--text); }
+.has-dark-hero .navbar:not(.scrolled) .nav-links a { color: rgba(255,255,255,.92); }
 .nav-cta { background: var(--secondary-green); color: #fff !important; padding: 10px 22px; border-radius: 999px; }
 .nav-cta:hover { background: var(--green-600); }
 .nav-toggle { display: none; flex-direction: column; gap: 5px; padding: 8px; }
-.nav-toggle span { display: block; width: 24px; height: 2px; background: #fff; transition: .3s; }
-.navbar.scrolled .nav-toggle span { background: var(--primary-green); }
+.nav-toggle span { display: block; width: 24px; height: 2px; background: var(--primary-green); transition: .3s; }
+.has-dark-hero .navbar:not(.scrolled) .nav-toggle span { background: #fff; }
 
 /* ---------- 通用排版组件 ---------- */
 .kicker {

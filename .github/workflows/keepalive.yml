@@ -1,0 +1,20 @@
+name: Keep Render Awake
+
+# 每 12 分钟 ping 一次公网地址，防止 Render 免费版进入深度休眠
+# （Render 免费版 15 分钟无流量会休眠，首次访问需 30-60 秒唤醒）
+# 运行在 GitHub 服务器上，不依赖本地电脑开机，完全免费
+on:
+  schedule:
+    - cron: '*/12 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping public URL
+        run: |
+          code=$(curl -sS -m 30 -o /dev/null -w '%{http_code}' "https://greenfun-gakk.onrender.com/api/health" || true)
+          echo "health HTTP $code"
+          # 再 ping 一次首页，确保整站常温
+          curl -sS -m 30 -o /dev/null "https://greenfun-gakk.onrender.com/" || true

@@ -28,6 +28,9 @@ nul
 # 本地测试临时目录
 .tmp/
 
+# 一次性推送脚本（含 PAT，勿提交，用完删除）
+push_to_github.bat
+
 # Cloudflare Tunnel 二进制（部署包内下载获得，不提交）
 deploy-local/cloudflared.exe
 # 隧道/服务运行日志（运行时生成）
