@@ -2047,8 +2047,8 @@ async function renderSales() {
   }
 
   const [cats, pmts] = await Promise.all([
-    api('GET', '/api/sales/categories'),
-    api('GET', '/api/sales/payments'),
+    api('GET', '/sales/categories'),
+    api('GET', '/sales/payments'),
   ]);
   state._salesCats = cats;
   state._salesPmts = pmts;
@@ -2084,12 +2084,12 @@ async function renderSales() {
 
 async function loadSalesList() {
   const params = new URLSearchParams();
-  const df = $('#sfDateFrom').value; if (params) params.set('date_from', df);
+  const df = $('#sfDateFrom').value; if (df) params.set('date_from', df);
   const dt = $('#sfDateTo').value; if (dt) params.set('date_to', dt);
   const cu = $('#sfCustomer').value.trim(); if (cu) params.set('customer', cu);
   const cat = $('#sfCategory').value; if (cat) params.set('category', cat);
 
-  const list = await api('GET', '/api/sales' + (params.toString() ? '?' + params : ''));
+  const list = await api('GET', '/sales' + (params.toString() ? '?' + params : ''));
   const container = $('#salesList');
 
   if (!list.length) {
@@ -2210,9 +2210,9 @@ function openSalesForm(record) {
 
     let res;
     if (r.id) {
-      res = await api('PUT', `/api/sales/${r.id}`, body);
+      res = await api('PUT', `/sales/${r.id}`, body);
     } else {
-      res = await api('POST', '/api/sales', body);
+      res = await api('POST', '/sales', body);
     }
     if (res.error) return toast(res.error);
     toast(r.id ? '已修改' : '已登记');
@@ -2222,14 +2222,14 @@ function openSalesForm(record) {
 }
 
 window.editSaleRecord = async function(id) {
-  const r = await api('GET', `/api/sales/${id}`);
+  const r = await api('GET', `/sales/${id}`);
   if (r.error) return toast(r.error);
   openSalesForm(r);
 };
 
 window.deleteSaleRecord = async function(id) {
   if (!confirm('确认删除该条销售记录？')) return;
-  const r = await api('DELETE', `/api/sales/${id}`);
+  const r = await api('DELETE', `/sales/${id}`);
   if (r.error) return toast(r.error);
   toast('已删除');
   await loadSalesList();
@@ -2241,7 +2241,7 @@ window.printSaleReceipt = function(id) {
 
 async function loadWeeklySummary() {
   toast('加载本周数据...');
-  const data = await api('GET', '/api/sales/weekly');
+  const data = await api('GET', '/sales/weekly');
   const panel = $('#weeklyPanel');
   panel.style.display = '';
 
