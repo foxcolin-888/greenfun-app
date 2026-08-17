@@ -221,6 +221,7 @@ async function switchView(v) {
   if (v === 'credits') return renderCredits();
   if (v === 'settings') return renderSettings();
   if (v === 'users') return renderUsers();
+  if (v === 'sales') return renderSales();
 }
 
 // ---------------- 客户档案 ----------------
@@ -2004,6 +2005,283 @@ async function saveSiteAll(){
   const r=await api('PUT','/site',s);
   if(r.error) return toast('保存失败：'+r.error);
   toast('已保存，刷新官网即可生效');
+}
+
+// ==================== 门店销售记录 ====================
+const SALES_CSS = `
+.sales-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow)}
+.sales-toolbar input,.sales-toolbar select{padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px}
+.sales-toolbar .btn-sm{padding:6px 14px;font-size:13px}
+.sales-table{width:100%;border-collapse:collapse;font-size:13px}
+.sales-table th{background:var(--green-50);color:var(--green-800);padding:9px 10px;text-align:left;font-weight:600;border-bottom:2px solid var(--border)}
+.sales-table td{padding:8px 10px;border-bottom:1px solid var(--hair);vertical-align:middle}
+.sales-table tr:hover{background:var(--cream)}
+.sales-date-group td{background:#f0f7f2;font-weight:700;color:var(--green-800);font-size:14px}
+.sales-img{width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--hair)}
+.sales-actions button{margin-right:4px;padding:3px 8px;font-size:12px}
+.sales-form-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center}
+.sales-form-card{background:var(--card);border-radius:12px;padding:24px;width:520px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.sales-form-card h3{margin:0 0 16px;color:var(--green-800);font-size:18px;display:flex;justify-content:space-between;align-items:center}
+.sales-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sales-form-grid .full{grid-column:1/-1}
+.sales-form-grid label{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:3px;display:block}
+.sales-form-grid input,.sales-form-grid select,.sales-form-grid textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;box-sizing:border-box}
+.sales-form-grid textarea{resize:vertical;min-height:50px}
+.sales-form-btns{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
+.weekly-summary{background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:20px;margin-top:16px}
+.weekly-summary h3{color:var(--green-800);margin:0 0 12px}
+.weekly-cust{border:1px solid var(--hair);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.weekly-cust-head{background:var(--green-50);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.weekly-cust-body{padding:10px 14px}
+.weekly-cust-body table{width:100%;font-size:12px;border-collapse:collapse}
+.weekly-cust-body th,.weekly-cust-body td{padding:5px 8px;border-bottom:1px solid var(--hair);text-align:left}
+.weekly-total{text-align:right;font-size:15px;font-weight:bold;color:var(--green-800);padding:12px;background:#f0f7f2;border-radius:6px;margin-top:8px}
+`;
+
+async function renderSales() {
+  if (!document.getElementById('sales-style')) {
+    const st = document.createElement('style');
+    st.id = 'sales-style';
+    st.textContent = SALES_CSS;
+    document.head.appendChild(st);
+  }
+
+  const [cats, pmts] = await Promise.all([
+    api('GET', '/api/sales/categories'),
+    api('GET', '/api/sales/payments'),
+  ]);
+  state._salesCats = cats;
+  state._salesPmts = pmts;
+
+  const app = $('#app');
+  app.innerHTML = `
+    <div class="sales-toolbar">
+      <input type="date" id="sfDateFrom" />
+      <span>~</span>
+      <input type="date" id="sfDateTo" />
+      <input placeholder="搜索客户..." id="sfCustomer" style="width:140px" />
+      <select id="sfCategory"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
+      <button class="btn sm" id="sfSearch">🔍 查询</button>
+      <button class="btn sm primary" id="sfAdd">+ 登记销售</button>
+      <button class="btn sm amber" id="sfWeekly">📊 本周汇总</button>
+    </div>
+    <div id="salesList"></div>
+    <div id="weeklyPanel" style="display:none"></div>
+  `;
+
+  // 默认日期：本月
+  const now = new Date();
+  $('#sfDateFrom').value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+  $('#sfDateTo').value = now.toISOString().slice(0,10);
+
+  $('#sfSearch').addEventListener('click', loadSalesList);
+  $('#sfAdd').addEventListener('click', () => openSalesForm());
+  $('#sfWeekly').addEventListener('click', loadWeeklySummary);
+  $('#sfCustomer').addEventListener('keydown', e => { if (e.key === 'Enter') loadSalesList(); });
+
+  await loadSalesList();
+}
+
+async function loadSalesList() {
+  const params = new URLSearchParams();
+  const df = $('#sfDateFrom').value; if (params) params.set('date_from', df);
+  const dt = $('#sfDateTo').value; if (dt) params.set('date_to', dt);
+  const cu = $('#sfCustomer').value.trim(); if (cu) params.set('customer', cu);
+  const cat = $('#sfCategory').value; if (cat) params.set('category', cat);
+
+  const list = await api('GET', '/api/sales' + (params.toString() ? '?' + params : ''));
+  const container = $('#salesList');
+
+  if (!list.length) {
+    container.innerHTML = '<p style="text-align:center;color:var(--muted);padding:40px">暂无销售记录</p>';
+    return;
+  }
+
+  // 按日期分组
+  let html = '<table class="sales-table"><thead><tr><th width="90">日期</th><th width="110">收入类别</th><th>商品名</th><th width="60">图片</th><th width="130">价格/折扣</th><th width="80">充值</th><th width="85">销售收入</th><th width="100">收款方式</th><th width="120">客户</th><th width="120">操作</th></tr></thead><tbody>';
+  let lastDate = '';
+  let totalSales = 0, totalRecharge = 0;
+
+  for (const s of list) {
+    const dateLabel = s.sale_date !== lastDate ? esc(s.sale_date) : '';
+    if (dateLabel) {
+      if (lastDate) html += `<tr><td colspan="10" style="background:#f9f9f9;font-size:11px;color:#999;text-align:right;padding:2px 10px">小计：销售￥${totalSales.toFixed(2)} / 充值￥${totalRecharge.toFixed(2)}</td></tr>`;
+      totalSales = 0; totalRecharge = 0;
+      html += `<tr class="sales-date-group"><td colspan="10">📅 ${dateLabel}</td></tr>`;
+      lastDate = s.sale_date;
+    }
+    const sa = parseFloat(s.sales_amount) || 0;
+    const ra = parseFloat(s.recharge_amount) || 0;
+    totalSales += sa;
+    totalRecharge += ra;
+
+    html += `<tr>
+      <td>${dateLabel ? '' : ''}</td>
+      <td>${esc(s.category)}</td>
+      <td style="font-weight:500">${esc(s.product_name || '-')}</td>
+      <td>${s.photo_url ? `<img src="${esc(s.photo_url)}" class="sales-img" onerror="this.style.display='none'">` : '-'}</td>
+      <td style="font-size:12px;color:var(--muted)">${esc(s.price_note || '-')}</td>
+      <td class="r">${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
+      <td class="r" style="font-weight:600;color:var(--green-700)">￥${sa.toFixed(2)}</td>
+      <td>${esc(s.payment_method || '-')}</td>
+      <td>${esc(s.customer_name || '-')}</td>
+      <td class="sales-actions">
+        <button class="btn sm ghost" onclick="printSaleReceipt(${s.id})">🖨️ 打印</button>
+        <button class="btn sm ghost" onclick="editSaleRecord(${s.id})">✏️ 编辑</button>
+        <button class="btn sm ghost" onclick="deleteSaleRecord(${s.id})">🗑️</button>
+      </td>
+    </tr>`;
+  }
+  html += `<tr><td colspan="10" style="background:#e8f0e4;font-size:12px;text-align:right;padding:4px 10px;font-weight:bold;color:var(--green-800)">
+    合计：销售￥${totalSales.toFixed(2)} · 充值￥${totalRecharge.toFixed(2)}
+  </td></tr></tbody></table>`;
+  container.innerHTML = html;
+}
+
+function openSalesForm(record) {
+  const r = record || {};
+  const cats = state._salesCats || [];
+  const pmts = state._salesPmts || [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sales-form-overlay';
+  overlay.innerHTML = `
+    <div class="sales-form-card">
+      <h3>${r.id ? '编辑销售记录' : '登记新销售'}<button class="btn sm ghost" id="sfClose">✕</button></h3>
+      <div class="sales-form-grid">
+        <div><label>日期 *</label><input type="date" id="efDate" value="${esc(r.sale_date || new Date().toISOString().slice(0,10))}" /></div>
+        <div><label>收入类别 *</label><select id="efCat">${cats.map(c => `<option value="${c}" ${r.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+        <div class="full"><label>商品名称</label><input id="efProduct" value="${esc(r.product_name || '')}" placeholder="如：完美生日盆栽" /></div>
+        <div class="full"><label>商品图片</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${r.photo_url ? `<img src="${esc(r.photo_url)}" id="efImgPreview" class="sales-img">` : ''}
+            <input type="file" id="efPhoto" accept="image/*" style="font-size:13px" />
+            <input type="hidden" id="efPhotoUrl" value="${esc(r.photo_url || '')}" />
+          </div>
+        </div>
+        <div><label>销售收入金额（元）*</label><input type="number" id="efSalesAmt" value="${r.sales_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
+        <div><label>充值金额（元）</label><input type="number" id="efRechargeAmt" value="${r.recharge_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
+        <div><label>收款方式 *</label><select id="efPay">${pmts.map(p => `<option value="${p}" ${r.payment_method === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
+        <div><label>客户名称</label><input id="efCustomer" value="${esc(r.customer_name || '')}" placeholder="客户姓名/备注" /></div>
+        <div class="full"><label>价格/折扣说明</label><textarea id="efPriceNote" placeholder="原价、折扣、套餐说明等">${esc(r.price_note || '')}</textarea></div>
+        <div class="full"><label>备注</label><textarea id="efNote" placeholder="其他备注">${esc(r.note || '')}</textarea></div>
+      </div>
+      <div class="sales-form-btns">
+        <button class="btn ghost" id="sfCancel">取消</button>
+        <button class="btn primary" id="sfSave">${r.id ? '保存修改' : '登记'}</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // 图片上传
+  const photoInput = $('#efPhoto', overlay);
+  if (photoInput) photoInput.addEventListener('change', async e => {
+    const file = e.target.files[0]; if (!file) return;
+    toast('上传中...');
+    const b64 = await readFileAsDataURL(file);
+    const r2 = await api('POST', '/upload', { data: b64, folder: 'sales' });
+    if (r2.url) {
+      $('#efPhotoUrl', overlay).value = r2.url;
+      let prev = $('#efImgPreview', overlay);
+      if (!prev) { prev = document.createElement('img'); prev.className = 'sales-img'; prev.id = 'efImgPreview'; photoInput.parentNode.insertBefore(prev, photoInput); }
+      prev.src = r2.url;
+      toast('已上传');
+    } else { toast('上传失败'); }
+  });
+
+  $('#sfClose', overlay).onclick = () => overlay.remove();
+  $('#sfCancel', overlay).onclick = () => overlay.remove();
+  $('#sfSave', overlay).onclick = async () => {
+    const body = {
+      sale_date: $('#efDate', overlay).value,
+      category: $('#efCat', overlay).value,
+      product_name: $('#efProduct', overlay).value,
+      photo_url: $('#efPhotoUrl', overlay).value,
+      price_note: $('#efPriceNote', overlay).value,
+      recharge_amount: $('#efRechargeAmt', overlay).value,
+      sales_amount: $('#efSalesAmt', overlay).value,
+      payment_method: $('#efPay', overlay).value,
+      customer_name: $('#efCustomer', overlay).value,
+      note: $('#efNote', overlay).value,
+    };
+    if (!body.category || !body.payment_method) return toast('收入类别和收款方式必填');
+    if (body.sales_amount === '' && body.recharge_amount === '') return toast('至少填写销售收入或充值金额之一');
+
+    let res;
+    if (r.id) {
+      res = await api('PUT', `/api/sales/${r.id}`, body);
+    } else {
+      res = await api('POST', '/api/sales', body);
+    }
+    if (res.error) return toast(res.error);
+    toast(r.id ? '已修改' : '已登记');
+    overlay.remove();
+    await loadSalesList();
+  };
+}
+
+window.editSaleRecord = async function(id) {
+  const r = await api('GET', `/api/sales/${id}`);
+  if (r.error) return toast(r.error);
+  openSalesForm(r);
+};
+
+window.deleteSaleRecord = async function(id) {
+  if (!confirm('确认删除该条销售记录？')) return;
+  const r = await api('DELETE', `/api/sales/${id}`);
+  if (r.error) return toast(r.error);
+  toast('已删除');
+  await loadSalesList();
+};
+
+window.printSaleReceipt = function(id) {
+  window.open(`/api/sales/${id}/print?token=${state.token}`, '_blank');
+};
+
+async function loadWeeklySummary() {
+  toast('加载本周数据...');
+  const data = await api('GET', '/api/sales/weekly');
+  const panel = $('#weeklyPanel');
+  panel.style.display = '';
+
+  const custNames = Object.keys(data.customers || {});
+  if (!custNames.length) {
+    panel.innerHTML = '<p style="text-align:center;color:var(--muted);padding:30px">本周暂无销售记录</p>';
+    return;
+  }
+
+  let html = `<div class="weekly-summary">
+    <h3>📊 本周消费汇总（${data.week_start} ~ ${data.week_end}）</h3>`;
+
+  for (const name of custNames) {
+    const c = data.customers[name];
+    html += `<div class="weekly-cust">
+      <div class="weekly-cust-head">
+        <span>👤 ${esc(name)} (${c.items.length} 笔)</span>
+        <span>销售 ￥${c.total_sales.toFixed(2)} | 充值 ￥${c.total_recharge.toFixed(2)}</span>
+      </div>
+      <div class="weekly-cust-body">
+        <table>
+          <thead><tr><th>日期</th><th>类别</th><th>商品</th><th>销售收入</th><th>充值</th><th>收款方式</th></tr></thead>
+          <tbody>`;
+    for (const item of c.items) {
+      html += `<tr>
+        <td>${esc(item.sale_date)}</td>
+        <td>${esc(item.category)}</td>
+        <td>${esc(item.product_name || '-')}</td>
+        <td class="r">￥${parseFloat(item.sales_amount||0).toFixed(2)}</td>
+        <td class="r">${parseFloat(item.recharge_amount||0)>0 ? '￥'+parseFloat(item.recharge_amount||0).toFixed(2):''}</td>
+        <td>${esc(item.payment_method||'-')}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div></div>`;
+  }
+
+  html += `<div class="weekly-total">
+    📈 本周总计：销售 ￥${data.grand_total_sales.toFixed(2)} | 充值 ￥${data.grand_total_recharge.toFixed(2)}
+  </div></div>`;
+  panel.innerHTML = html;
 }
 
 init();

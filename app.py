@@ -248,6 +248,19 @@ DEFAULT_USERS = [
 ]
 
 # ---------------------------------------------------------------------------
+# 门店销售记录：收入类别 / 收款方式预设
+# ---------------------------------------------------------------------------
+SALES_CATEGORIES = [
+    "盆栽零售收入", "沙龙手作收入", "盆栽团购收入",
+    "家装收入", "其它收入", "茶饮收入",
+]
+SALES_PAYMENT_METHODS = [
+    "桂林3812卡", "充值抵扣", "有赞余额", "有赞储值",
+    "应收账款", "内部结算", "门店赠送", "绿趣公账",
+    "租赁收款", "微信支付", "支付宝", "现金",
+]
+
+# ---------------------------------------------------------------------------
 # 默认公式参数（费率）
 # ---------------------------------------------------------------------------
 DEFAULT_SETTINGS = {
@@ -545,6 +558,26 @@ def init_db():
     os.makedirs(os.path.join(UPLOAD_DIR, "schemes"), exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_DIR, "cases"), exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_DIR, "content"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "sales"), exist_ok=True)
+
+    # 门店每日销售记录
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS daily_sales (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_date TEXT NOT NULL,
+        category TEXT NOT NULL,
+        product_name TEXT DEFAULT '',
+        photo_url TEXT DEFAULT '',
+        price_note TEXT DEFAULT '',
+        recharge_amount REAL DEFAULT 0,
+        sales_amount REAL DEFAULT 0,
+        payment_method TEXT DEFAULT '',
+        customer_name TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        created_by TEXT DEFAULT '',
+        created_at TEXT
+    )""")
+    conn.commit()
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -1372,6 +1405,9 @@ class Handler(BaseHTTPRequestHandler):
         # 方案设计打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
         if path.startswith("/api/schemes/") and path.endswith("/print"):
             return self._scheme_print(path)
+        # 门店销售单打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
+        if path.startswith("/api/sales/") and path.endswith("/print"):
+            return self._sales_print(path)
 
         # 官网案例（公开，无需登录）：列表 + 单条详情
         if path == "/api/cases":
@@ -1393,6 +1429,30 @@ class Handler(BaseHTTPRequestHandler):
         u = self._need()
         if not u:
             return
+
+        # ---- 门店销售记录 ----
+        # 预设选项（无需查库）
+        if path == "/api/sales/categories":
+            return self._json(SALES_CATEGORIES)
+        if path == "/api/sales/payments":
+            return self._json(SALES_PAYMENT_METHODS)
+        # 销售列表（支持 ?date_from=&date_to=&customer=&category=）
+        if path == "/api/sales":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            params = {}
+            for k in ("date_from","date_to","customer","category"):
+                v = qs.get(k)
+                if v: params[k] = v[0]
+            return self._json(_sales_list(params))
+        # 本周客户消费汇总（须排在通用前缀匹配之前）
+        if path == "/api/sales/weekly":
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            ws = (qs.get("week_start") or [None])[0]
+            return self._json(_sales_weekly_summary(ws))
+        # 单条销售详情 /api/sales/<id>（需登录）
+        if path.startswith("/api/sales/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
+            return self._json(_sales_get(int(path.split("/")[3])))
+
         if path == "/api/me":
             return self._json({"user": {k: u[k] for k in ("username", "name", "role")}})
         if path == "/api/me/credits":
@@ -1517,6 +1577,18 @@ class Handler(BaseHTTPRequestHandler):
             if u["role"] not in ("admin", "manager"):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._update_settings(body))
+
+        # ---- 门店销售记录（写入） ----
+        if path == "/api/sales" and method == "POST":
+            return self._json(_sales_create(body, u), 201)
+        if path.startswith("/api/sales/"):
+            sp = path.split("/")
+            if len(sp) == 4 and sp[3].isdigit():
+                sid = int(sp[3])
+                if method == "PUT":
+                    return self._json(_sales_update(sid, body))
+                if method == "DELETE":
+                    return self._json(_sales_delete(sid))
 
         # 预约线索（管理员/店长可删除）
         if path.startswith("/api/contacts/"):
@@ -2180,7 +2252,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _scheme_upload(self, body):
         folder = (body.get("folder") or "schemes").strip() or "schemes"
-        if folder not in ("schemes", "cases", "content", "site"):
+        if folder not in ("schemes", "cases", "content", "site", "sales"):
             folder = "schemes"
         data = body.get("data", "")
         if "," in data:
@@ -2891,6 +2963,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, "not found")
         return self._send(200, render_quote_html(d), "text/html; charset=utf-8")
 
+    def _sales_print(self, path):
+        """销售单打印页；token 通过查询参数 ?token= 传入"""
+        parts = urllib.parse.urlparse(self.path)
+        sid = path.split("/")[3]
+        if not sid.isdigit():
+            return self._send(404, "not found")
+        qs = urllib.parse.parse_qs(parts.query)
+        token = qs.get("token", [""])[0]
+        sess = SESSIONS.get(token)
+        if not sess or sess["exp"] < datetime.datetime.now().timestamp():
+            return self._send(401, "<h3 style='font-family:sans-serif'>会话已过期，请回系统重新打开销售单</h3>",
+                              "text/html; charset=utf-8")
+        html = _sales_receipt_html(int(sid))
+        return self._send(200, html, "text/html; charset=utf-8")
+
     # ---- 统计 ----
     def _stats(self, u):
         conn = get_db()
@@ -3111,6 +3198,211 @@ def render_quote_html(q):
 </div>
 <div class="foot">{foot_full}</div>
 </body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# 门店每日销售记录 —— 业务函数
+# ---------------------------------------------------------------------------
+
+def _sales_list(params=None):
+    """查询销售记录，支持按日期/客户筛选"""
+    conn = get_db()
+    sql = "SELECT * FROM daily_sales ORDER BY sale_date DESC, id DESC"
+    args = []
+    if params:
+        conds = []
+        if params.get("date_from"):
+            conds.append("sale_date >= ?")
+            args.append(params["date_from"])
+        if params.get("date_to"):
+            conds.append("sale_date <= ?")
+            args.append(params["date_to"])
+        if params.get("customer"):
+            conds.append("customer_name LIKE ?")
+            args.append("%" + params["customer"] + "%")
+        if params.get("category"):
+            conds.append("category = ?")
+            args.append(params["category"])
+        if conds:
+            sql = "SELECT * FROM daily_sales WHERE " + " AND ".join(conds) + " ORDER BY sale_date DESC, id DESC"
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def _sales_get(sid):
+    """获取单条销售记录"""
+    conn = get_db()
+    r = conn.execute("SELECT * FROM daily_sales WHERE id=?", (sid,)).fetchone()
+    conn.close()
+    return dict(r) if r else None
+
+
+def _sales_create(body, user=None):
+    """新建销售记录"""
+    t = now_str()
+    conn = get_db()
+    cur = conn.execute("""
+        INSERT INTO daily_sales (sale_date, category, product_name, photo_url, price_note,
+            recharge_amount, sales_amount, payment_method, customer_name, note,
+            created_by, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        body.get("sale_date", t[:10]),
+        body.get("category", ""),
+        body.get("product_name", ""),
+        body.get("photo_url", ""),
+        body.get("price_note", ""),
+        float(body.get("recharge_amount") or 0),
+        float(body.get("sales_amount") or 0),
+        body.get("payment_method", ""),
+        body.get("customer_name", ""),
+        body.get("note", ""),
+        user.get("username", "") if user else "",
+        t,
+    ))
+    conn.commit()
+    sid = cur.lastrowid
+    conn.close()
+    return {"id": sid}
+
+
+def _sales_update(sid, body):
+    """更新销售记录"""
+    conn = get_db()
+    fields = []
+    values = []
+    for k in ("sale_date","category","product_name","photo_url","price_note",
+              "recharge_amount","sales_amount","payment_method","customer_name","note"):
+        if k in body:
+            fields.append(f"{k}=?")
+            # numeric fields
+            if k in ("recharge_amount","sales_amount"):
+                values.append(float(body[k]) or 0)
+            else:
+                values.append(body[k])
+    if not fields:
+        conn.close()
+        return {"ok": True}
+    values.append(sid)
+    conn.execute(f"UPDATE daily_sales SET {','.join(fields)},created_at=created_at WHERE id=?", values)
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+def _sales_delete(sid):
+    """删除销售记录"""
+    conn = get_db()
+    conn.execute("DELETE FROM daily_sales WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+def _sales_receipt_html(sid):
+    """生成单笔销售单 HTML（可打印）"""
+    s = _sales_get(sid)
+    if not s:
+        return "<p>未找到该销售记录</p>"
+    company = "温州绿趣植物空间艺术科技有限公司"
+    addr = "鹿城区六虹桥路991号"
+    phone = "0577-88868293"
+    sales_amt = float(s.get("sales_amount", 0) or 0)
+    recharge_amt = float(s.get("recharge_amount", 0) or 0)
+    total = sales_amt + recharge_amt
+    # 预先拼好可选行，避免在 f-string 表达式内使用引号/反斜杠
+    recharge_row = ""
+    if recharge_amt > 0:
+        recharge_row = ('<tr><th class="r">充值金额</th><td class="r">'
+                        + "&yen;" + ("%.2f" % recharge_amt) + "</td></tr>")
+    photo_row = ""
+    if s.get("photo_url"):
+        photo_row = ('<tr><th>商品图片</th><td><img src="' + esc(s.get("photo_url", ""))
+                     + '" style="max-height:120px;border-radius:4px"></td></tr>')
+    note_row = ""
+    if s.get("note"):
+        note_row = "<tr><th>备注</th><td>" + esc(s.get("note", "")) + "</td></tr>"
+    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>销售单 #{s['id']}</title>
+<style>
+body{{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;padding:40px;max-width:520px;margin:auto;color:#333}}
+h1{{text-align:center;font-size:20px;color:#2D5A27;border-bottom:2px solid #2D5A27;padding-bottom:10px}}
+.info{{display:flex;justify-content:space-between;font-size:13px;color:#666;margin-bottom:16px}}
+table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}}
+th,td{{border:1px solid #ddd;padding:8px 10px;text-align:left}}
+th{{background:#f5f7f4;color:#2D5A27;font-weight:600}}.r{{text-align:right}}
+.tot{{font-size:17px;font-weight:bold;text-align:right;padding:12px;background:#f0f7f2;border:1px solid #c8d9c6}}
+.sign{{margin-top:30px;display:flex;justify-content:space-between;font-size:13px;color:#555}}
+.foot{{margin-top:24px;text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:10px}}
+@media print{{body{{padding:20px}} .no-print{{display:none}}}}
+</style></head><body>
+<h1>{company} 销售单</h1>
+<div class="info">
+  <span>单号：#{s['id']}</span>
+  <span>日期：{s.get('sale_date','')}</span>
+</div>
+<div class="info">
+  <span>操作员：{s.get('created_by','')}</span>
+  <span>客户：{s.get('customer_name','-')}</span>
+</div>
+<table>
+  <tr><th>收入类别</th><td>{s.get('category','-')}</td></tr>
+  <tr><th>商品名称</th><td>{s.get('product_name','-')}</td></tr>
+  <tr><th>价格/折扣说明</th><td>{s.get('price_note','-') or '-'}</td></tr>
+  {recharge_row}
+  <tr><th class="r">销售收入</th><td class="r">&yen;{sales_amt:.2f}</td></tr>
+  <tr><th>收款方式</th><td>{s.get('payment_method','-')}</td></tr>
+  {photo_row}
+  {note_row}
+</table>
+<div class="tot">合计：&yen;{total:.2f}</div>
+<div class="sign">
+  <span>客户签字：______________</span>
+  <span>日期：__________</span>
+</div>
+<div class="foot">{company} · {addr} · {phone}</div>
+<script>window.onload=function(){{window.print()}}</script>
+</body></html>"""
+
+
+def _sales_weekly_summary(week_start=None):
+    """本周客户消费汇总：按客户分组，列出买了什么、消费多少"""
+    import datetime as dt
+    if not week_start:
+        today = dt.date.today()
+        week_start = today - dt.timedelta(days=today.weekday())  # 本周一
+    elif isinstance(week_start, str):
+        week_start = dt.date.fromisoformat(week_start)
+    week_end = week_start + dt.timedelta(days=6)
+    ds = week_start.isoformat()
+    de = week_end.isoformat()
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ? ORDER BY customer_name, sale_date, id",
+        (ds, de),
+    ).fetchall()
+    conn.close()
+
+    # 按客户分组
+    customers = {}
+    for r in rows:
+        d = dict(r)
+        name = d.get("customer_name") or "(未登记客户)"
+        if name not in customers:
+            customers[name] = {"items": [], "total_sales": 0, "total_recharge": 0}
+        customers[name]["items"].append(d)
+        customers[name]["total_sales"] += float(d.get("sales_amount") or 0)
+        customers[name]["total_recharge"] += float(d.get("recharge_amount") or 0)
+
+    return {
+        "week_start": ds,
+        "week_end": de,
+        "customers": customers,
+        "grand_total_sales": sum(c["total_sales"] for c in customers.values()),
+        "grand_total_recharge": sum(c["total_recharge"] for c in customers.values()),
+    }
 
 
 def main():
