@@ -238,13 +238,13 @@ def cat_group(category):
 
 
 # ---------------------------------------------------------------------------
-# 默认账号（首次启动内置；免费版重启会重建，请上线后尽快改密码）
+# 默认账号（首次启动内置，并强制同步密码；上线后请在后台「用户管理」改为各员工专属强密码，并删除示例账号）
 # ---------------------------------------------------------------------------
 DEFAULT_USERS = [
-    ("lvquguanliyuan", "123456", "系统管理员", "admin"),
-    ("dianzhang", "green123", "店长", "manager"),
-    ("xiaoshou", "green123", "销售顾问", "sales"),
-    ("sheji", "green123", "设计师", "designer"),
+    ("lvquguanliyuan", "LvquAdmin#2026", "系统管理员", "admin"),
+    ("dianzhang", "Dianzhang#2026", "店长", "manager"),
+    ("xiaoshou", "Xiaoshou#2026", "销售顾问", "sales"),
+    ("sheji", "Sheji#2026", "设计师", "designer"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -3410,7 +3410,7 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"绿趣全流程管理系统已启动： http://localhost:{PORT}")
     print(f"数据库：{DB_PATH}")
-    print("默认账号：lvquguanliyuan/123456（管理员）、dianzhang/green123（店长）、xiaoshou/green123（销售）、sheji/green123（设计师）")
+    print("默认账号：lvquguanliyuan/LvquAdmin#2026（管理员）、dianzhang/Dianzhang#2026（店长）、xiaoshou/Xiaoshou#2026（销售）、sheji/Sheji#2026（设计师）｜上线后请立即在后台「用户管理」改密并删示例账号")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

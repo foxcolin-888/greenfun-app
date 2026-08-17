@@ -160,10 +160,8 @@
   }
   function setText(sel, val){ const el=$(sel); if(el && val!=null && String(val)!=='') el.textContent=val; }
   function setHtml(sel, val){ const el=$(sel); if(el && val!=null && String(val)!=='') el.innerHTML=val; }
-  async function loadSite(){
-    let cfg=null;
-    try{ const r=await fetch('/api/site'); cfg=await r.json(); }catch(e){ console.log('site api not ready',e); }
-    if(!cfg) return;
+  let _siteSig = '';
+  function applySiteConfig(cfg){
     applyAppearance(cfg.appearance);
     const h=cfg.hero||{};
     setText('#heroKicker', h.kicker);
@@ -199,6 +197,12 @@
     if(ap.logo_icon){ setText('#logoIcon', ap.logo_icon); setText('#footerLogoIcon', ap.logo_icon); }
     if(Array.isArray(cfg.nav)){ const nl=$('#navLinks'); if(nl) nl.innerHTML=cfg.nav.map(n=>'<li><a href="'+esc(n.href||'#')+'"'+(n.cta?' class="nav-cta"':'')+'>'+esc(n.label||'')+'</a></li>').join(''); }
     refreshReveals();
+  }
+  async function loadSite(){
+    let cfg=null;
+    try{ const r=await fetch('/api/site'); cfg=await r.json(); }catch(e){ console.log('site api not ready',e); }
+    if(!cfg) return;
+    applySiteConfig(cfg);
   }
 
   async function loadCases() {
@@ -368,4 +372,41 @@
   loadPartners();
   loadTeam();
   bindFounder();
-})();
+
+  // 实时同步：后台（站点装修 / 案例 / 内容卡片）改动后，前台约 25 秒内自动刷新，无需手动刷新
+  const _syncCache = {};
+  function startRealtimeSync(ms){
+    if(window._realtimeTimer) return;
+    ms = ms || 25000;
+    const jobs = [
+      ['cases', '/api/cases', loadCases],
+      ['services', '/api/contents?type=service', loadServices],
+      ['courses', '/api/contents?type=course', loadCourses],
+      ['partners', '/api/contents?type=partner', loadPartners],
+      ['team', '/api/contents?type=team', loadTeam],
+    ];
+    const tick = async () => {
+      for (const [key, url, loader] of jobs) {
+        try {
+          const r = await fetch(url); if (!r.ok) continue;
+          const data = await r.json();
+          const sig = JSON.stringify(data);
+          if (_syncCache[key] === sig) continue;   // 数据未变，跳过，避免无谓重绘
+          _syncCache[key] = sig;
+          loader();
+        } catch (e) {}
+      }
+      // 站点文案 / 图片 / 字体 / 主题：变更即时应用（不整页重绘）
+      try {
+        const r = await fetch('/api/site'); if (!r.ok) return;
+        const cfg = await r.json();
+        const sig = JSON.stringify(cfg);
+        if (_syncCache['site'] !== sig) { _syncCache['site'] = sig; applySiteConfig(cfg); }
+      } catch (e) {}
+    };
+    window._realtimeTimer = setInterval(tick, ms);
+    tick();
+  }
+  startRealtimeSync();
+
+  })();
