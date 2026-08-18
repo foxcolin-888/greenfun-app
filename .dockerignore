@@ -1,0 +1,38 @@
+# 不进镜像的文件
+greenfun.db
+*.db
+*.db-shm
+*.db-wal
+
+# 本地上传（运行时由持久卷生成，不打包）
+web/uploads/
+
+# 本地测试 / 临时
+.tmp/
+_itest_tmp/
+__pycache__/
+*.pyc
+*.log
+
+# 部署脚手架（本机隧道等，服务器用不上）
+deploy-local/
+cloudflared.exe
+
+# 文档 / 元信息（可选，保留也行；这里排除减小镜像）
+forms/
+.github/
+README.md
+DESIGN.md
+render.yaml
+start.sh
+start.bat
+
+# 密钥
+.env
+.env.*
+*.secret
+
+# 系统文件
+.DS_Store
+Thumbs.db
+nul
