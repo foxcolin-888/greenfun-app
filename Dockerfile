@@ -7,6 +7,7 @@ WORKDIR /app
 # 仅复制运行时必需文件，避免把本地数据库/临时文件打进镜像
 COPY app.py ./
 COPY web/ ./web/
+COPY forms/ ./forms/
 COPY requirements.txt ./
 
 # 端口：容器内固定 8000（由 docker-compose 的 PORT 环境变量驱动，与 app.py 一致）

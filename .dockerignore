@@ -19,7 +19,7 @@ deploy-local/
 cloudflared.exe
 
 # 文档 / 元信息（可选，保留也行；这里排除减小镜像）
-forms/
+# forms/ 为运行时表单模板库，必须打包进镜像
 .github/
 README.md
 DESIGN.md
