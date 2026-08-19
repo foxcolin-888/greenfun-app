@@ -5,12 +5,18 @@
 # 例如 SITE=www.lvqu.com 或 lvqu.com
 {
     # 证书申请用的联系邮箱（改成你自己的）
-    email admin@lvqu.com
+    email admin@lvqu.online
     # 国内访问 Let's Encrypt 偶尔慢，可用 ZeroSSL 作为备用（可选，去掉注释即启用）
     # acme_ca https://acme.zerossl.com/v2/DV90
 }
 
 {$SITE} {
+    # 直接提供 SEO 静态文件（robots.txt / sitemap.xml / 百度验证文件）
+    handle_path /robots.txt /sitemap.xml /baidu_verify_* {
+        root * /srv/seo
+        file_server
+    }
+
     # 反代到 app 容器（compose 网络内服务名 app，端口 8000）
     reverse_proxy app:8000
 }

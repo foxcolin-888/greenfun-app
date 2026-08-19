@@ -37,12 +37,13 @@ services:
       - app
     # 把 SITE 改成你的域名（Caddyfile 里引用），例如 www.lvqu.com
     environment:
-      - SITE=www.lvqu.com
+      - SITE=www.lvqu.online, lvqu.online
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./seo:/srv/seo:ro
       - caddy_data:/data
       - caddy_config:/config
 
