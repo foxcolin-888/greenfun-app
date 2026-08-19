@@ -12,7 +12,15 @@
 
 {$SITE} {
     # 直接提供 SEO 静态文件（robots.txt / sitemap.xml / 百度验证文件）
-    handle_path /robots.txt /sitemap.xml /baidu_verify_* {
+    handle /robots.txt {
+        root * /srv/seo
+        file_server
+    }
+    handle /sitemap.xml {
+        root * /srv/seo
+        file_server
+    }
+    handle /baidu_verify_* {
         root * /srv/seo
         file_server
     }
