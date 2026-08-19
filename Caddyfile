@@ -1,8 +1,6 @@
 # 绿趣站点 - Caddy 自动 HTTPS 反向代理
 # Caddy 会自动向 Let's Encrypt 申请并续期 SSL 证书，无需手动操作。
-#
-# 关键：把下面的 SITE 环境变量改成你自己的域名（在 docker-compose.yml 的 caddy 服务里设置）。
-# 例如 SITE=www.lvqu.com 或 lvqu.com
+
 {
     # 证书申请用的联系邮箱（改成你自己的）
     email admin@lvqu.online
@@ -10,7 +8,8 @@
     # acme_ca https://acme.zerossl.com/v2/DV90
 }
 
-{$SITE} {
+# 站点域名：www 和根域名都指向本站点
+www.lvqu.online, lvqu.online {
     # 直接提供 SEO 静态文件（robots.txt / sitemap.xml / 百度验证文件）
     handle /robots.txt {
         root * /srv/seo

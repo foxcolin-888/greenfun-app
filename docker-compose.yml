@@ -35,9 +35,7 @@ services:
     restart: unless-stopped
     depends_on:
       - app
-    # 把 SITE 改成你的域名（Caddyfile 里引用），例如 www.lvqu.com
-    environment:
-      - SITE=www.lvqu.online, lvqu.online
+    # 域名已直接写死在 Caddyfile 中，避免环境变量替换出错
     ports:
       - "80:80"
       - "443:443"
