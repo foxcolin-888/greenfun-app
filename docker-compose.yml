@@ -26,6 +26,8 @@ services:
       - GREENFUN_IMG_GEN_SIZE=
     volumes:
       - greenfun_data:/data
+      # 挂载前端目录：开发/修复时改文件无需重建镜像，容器内立即生效
+      - ./web:/app/web:ro
     expose:
       - "8000"
 
