@@ -2045,6 +2045,8 @@ const SALES_CSS = `
 .weekly-ledger tfoot td{background:#fff2cc;font-weight:700;color:#333}
 .weekly-ledger .wk-img{width:44px;height:44px;object-fit:cover;border:1px solid #e0e0e0;border-radius:4px}
 .weekly-ledger .wk-empty{color:#bbb}
+.summary-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
+.summary-head h3{margin:0;font-size:17px;color:var(--green-800)}
 `;
 
 async function renderSales() {
@@ -2073,6 +2075,7 @@ async function renderSales() {
       <button class="btn sm" id="sfSearch">🔍 查询</button>
       <button class="btn sm primary" id="sfAdd">+ 登记销售</button>
       <button class="btn sm amber" id="sfWeekly">📊 本周汇总</button>
+      <button class="btn sm amber" id="sfMonthly">📅 本月汇总</button>
     </div>
     <div id="salesList"></div>
     <div id="weeklyPanel" style="display:none"></div>
@@ -2086,6 +2089,7 @@ async function renderSales() {
   $('#sfSearch').addEventListener('click', loadSalesList);
   $('#sfAdd').addEventListener('click', () => openSalesForm());
   $('#sfWeekly').addEventListener('click', loadWeeklySummary);
+  $('#sfMonthly').addEventListener('click', loadMonthlySummary);
   $('#sfCustomer').addEventListener('keydown', e => { if (e.key === 'Enter') loadSalesList(); });
 
   await loadSalesList();
@@ -2248,28 +2252,16 @@ window.printSaleReceipt = function(id) {
   window.open(`/api/sales/${id}/print?token=${state.token}`, '_blank');
 };
 
-async function loadWeeklySummary() {
-  toast('加载本周数据...');
-  const data = await api('GET', '/sales/weekly');
-  const panel = $('#weeklyPanel');
-  panel.style.display = '';
-
-  const custNames = Object.keys(data.customers || {});
-  if (!custNames.length) {
-    panel.innerHTML = '<p style="text-align:center;color:var(--muted);padding:30px">本周暂无销售记录</p>';
-    return;
-  }
-
-  // 拍平所有记录，按日期排序
-  const rows = [];
-  for (const name of custNames) {
-    const c = data.customers[name];
-    for (const item of c.items) rows.push(item);
+function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
+  if (!rows.length) {
+    return `<div class="weekly-summary"><div class="summary-head"><h3>📊 ${title}</h3></div><p style="text-align:center;color:var(--muted);padding:30px">本周期暂无销售记录</p></div>`;
   }
   rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
-
   let html = `<div class="weekly-summary">
-    <h3>📊 本周消费汇总（${data.week_start} ~ ${data.week_end}）</h3>
+    <div class="summary-head">
+      <h3>📊 ${title}</h3>
+      <button class="btn sm ghost" onclick="printLedger('${title.replace(/'/g, "")}')">🖨️ 打印本表</button>
+    </div>
     <table class="weekly-ledger">
       <thead>
         <tr>
@@ -2312,15 +2304,62 @@ async function loadWeeklySummary() {
   html += `</tbody>
       <tfoot>
         <tr>
-          <td colspan="5" style="text-align:right">本周合计</td>
-          <td style="text-align:right">￥${data.grand_total_recharge.toFixed(2)}</td>
-          <td style="text-align:right">￥${data.grand_total_sales.toFixed(2)}</td>
+          <td colspan="5" style="text-align:right">合计</td>
+          <td style="text-align:right">￥${grandRecharge.toFixed(2)}</td>
+          <td style="text-align:right">￥${grandSales.toFixed(2)}</td>
           <td colspan="5"></td>
         </tr>
       </tfoot>
     </table>
   </div>`;
-  panel.innerHTML = html;
+  return html;
 }
+
+async function loadWeeklySummary() {
+  toast('加载本周数据...');
+  const data = await api('GET', '/sales/weekly');
+  const panel = $('#weeklyPanel');
+  panel.style.display = '';
+  const custNames = Object.keys(data.customers || {});
+  const title = `本周消费汇总（${data.week_start} ~ ${data.week_end}）`;
+  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
+  const rows = [];
+  for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);
+  panel.innerHTML = buildLedgerHTML(title, rows, data.grand_total_sales, data.grand_total_recharge);
+}
+
+async function loadMonthlySummary() {
+  toast('加载本月数据...');
+  const data = await api('GET', '/sales/monthly');
+  const panel = $('#weeklyPanel');
+  panel.style.display = '';
+  const custNames = Object.keys(data.customers || {});
+  const title = `本月消费汇总（${data.date_start} ~ ${data.date_end}）`;
+  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
+  const rows = [];
+  for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);
+  panel.innerHTML = buildLedgerHTML(title, rows, data.grand_total_sales, data.grand_total_recharge);
+}
+
+window.printLedger = function(title) {
+  const panel = document.getElementById('weeklyPanel');
+  if (!panel) return;
+  const w = window.open('', '_blank');
+  if (!w) { toast('请允许浏览器弹出窗口后重试'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title><style>'
+    + 'body{font-family:"Microsoft YaHei","微软雅黑",sans-serif;padding:24px;color:#333}'
+    + 'h2{text-align:center;margin:0 0 16px;font-size:20px}'
+    + 'table{border-collapse:collapse;width:100%;font-size:12px}'
+    + 'th{background:#f4a460;color:#fff;padding:8px;border:1px solid #d9d9d9;white-space:nowrap}'
+    + 'td{padding:6px;border:1px solid #e0e0e0;vertical-align:middle;text-align:center}'
+    + 'td:nth-child(6),td:nth-child(7){text-align:right}'
+    + 'tbody tr:nth-child(even){background:#fff8f0}'
+    + 'tfoot td{background:#fff2cc;font-weight:700}'
+    + 'img.wk-img{width:44px;height:44px;object-fit:cover}'
+    + '@media print{button{display:none}body{padding:0}}'
+    + '</style></head><body><h2>' + title + '</h2>' + panel.innerHTML + '</body></html>');
+  w.document.close();
+  w.onload = function(){ setTimeout(function(){ w.print(); }, 300); };
+};
 
 init();

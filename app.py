@@ -1449,6 +1449,15 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             ws = (qs.get("week_start") or [None])[0]
             return self._json(_sales_weekly_summary(ws))
+        # 本月客户消费汇总（须排在 /api/sales/<id> 之前）
+        if path == "/api/sales/monthly":
+            import datetime as dt
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            y = (qs.get("year") or [None])[0]
+            m = (qs.get("month") or [None])[0]
+            yr = int(y) if y else dt.date.today().year
+            mo = int(m) if m else dt.date.today().month
+            return self._json(_sales_monthly_summary(yr, mo))
         # 单条销售详情 /api/sales/<id>（需登录）
         if path.startswith("/api/sales/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
             return self._json(_sales_get(int(path.split("/")[3])))
@@ -3399,6 +3408,43 @@ def _sales_weekly_summary(week_start=None):
     return {
         "week_start": ds,
         "week_end": de,
+        "customers": customers,
+        "grand_total_sales": sum(c["total_sales"] for c in customers.values()),
+        "grand_total_recharge": sum(c["total_recharge"] for c in customers.values()),
+    }
+
+
+def _sales_monthly_summary(year=None, month=None):
+    """本月（或指定年月）客户消费汇总：复用 weekly 逻辑，日期范围改为整月"""
+    import datetime as dt
+    today = dt.date.today()
+    if year is None:
+        year = today.year
+    if month is None:
+        month = today.month
+    ds = dt.date(year, month, 1)
+    if month == 12:
+        de = dt.date(year + 1, 1, 1) - dt.timedelta(days=1)
+    else:
+        de = dt.date(year, month + 1, 1) - dt.timedelta(days=1)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ? ORDER BY customer_name, sale_date, id",
+        (ds.isoformat(), de.isoformat()),
+    ).fetchall()
+    conn.close()
+    customers = {}
+    for r in rows:
+        d = dict(r)
+        name = d.get("customer_name") or "(未登记客户)"
+        if name not in customers:
+            customers[name] = {"items": [], "total_sales": 0, "total_recharge": 0}
+        customers[name]["items"].append(d)
+        customers[name]["total_sales"] += float(d.get("sales_amount") or 0)
+        customers[name]["total_recharge"] += float(d.get("recharge_amount") or 0)
+    return {
+        "date_start": ds.isoformat(),
+        "date_end": de.isoformat(),
         "customers": customers,
         "grand_total_sales": sum(c["total_sales"] for c in customers.values()),
         "grand_total_recharge": sum(c["total_recharge"] for c in customers.values()),
