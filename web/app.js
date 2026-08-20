@@ -3,6 +3,9 @@
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => Array.from(ctx.querySelectorAll(sel));
 
+  // 全局 IntersectionObserver 实例（供 refreshReveals 复用）
+  let io = null;
+
   // ---- 漂浮叶片动效 ----
   const leafLayer = $('#leafLayer');
   if (leafLayer && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -70,7 +73,7 @@
   // ---- 滚动渐现（干净版：.reveal → .is-visible） ----
   const revealEls = $$('.reveal');
   if ('IntersectionObserver' in window) {
-    const io = new IntersectionObserver((entries) => {
+    io = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           entry.target.classList.add('is-visible');
@@ -282,7 +285,7 @@
   }
 
   function refreshReveals() {
-    $$('.reveal').forEach(el => io.observe(el));
+    if (io) $$('.reveal').forEach(el => io.observe(el));
   }
 
   async function loadServices() {
