@@ -1,7 +1,12 @@
-// 全局错误兜底：脚本异常时给出提示而非静默空白
-window.addEventListener('error', function () {
+// 全局错误兜底：脚本异常 / 未处理 Promise 拒绝时给出提示而非静默空白
+function _showGlobalErr(msg) {
   var t = document.getElementById('toast');
-  if (t) { t.textContent = '页面脚本异常，请刷新重试'; t.classList.remove('hidden'); }
+  if (t) { t.textContent = msg; t.classList.remove('hidden'); }
+}
+window.addEventListener('error', function () { _showGlobalErr('页面脚本异常，请刷新重试'); });
+window.addEventListener('unhandledrejection', function (e) {
+  console.error(e.reason);
+  _showGlobalErr('操作失败：' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
 });
 // 绿趣 · 家装阳台植物花园全流程管理 —— 前端逻辑（原生 JS，无第三方依赖）
 const API = '/api';
@@ -2206,31 +2211,36 @@ function openSalesForm(record) {
   $('#sfClose', overlay).onclick = () => overlay.remove();
   $('#sfCancel', overlay).onclick = () => overlay.remove();
   $('#sfSave', overlay).onclick = async () => {
-    const body = {
-      sale_date: $('#efDate', overlay).value,
-      category: $('#efCat', overlay).value,
-      product_name: $('#efProduct', overlay).value,
-      photo_url: $('#efPhotoUrl', overlay).value,
-      price_note: $('#efPriceNote', overlay).value,
-      recharge_amount: $('#efRechargeAmt', overlay).value,
-      sales_amount: $('#efSalesAmt', overlay).value,
-      payment_method: $('#efPay', overlay).value,
-      customer_name: $('#efCustomer', overlay).value,
-      note: $('#efNote', overlay).value,
-    };
-    if (!body.category || !body.payment_method) return toast('收入类别和收款方式必填');
-    if (body.sales_amount === '' && body.recharge_amount === '') return toast('至少填写销售收入或充值金额之一');
+    try {
+      const body = {
+        sale_date: $('#efDate', overlay).value,
+        category: $('#efCat', overlay).value,
+        product_name: $('#efProduct', overlay).value,
+        photo_url: $('#efPhotoUrl', overlay).value,
+        price_note: $('#efPriceNote', overlay).value,
+        recharge_amount: $('#efRechargeAmt', overlay).value,
+        sales_amount: $('#efSalesAmt', overlay).value,
+        payment_method: $('#efPay', overlay).value,
+        customer_name: $('#efCustomer', overlay).value,
+        note: $('#efNote', overlay).value,
+      };
+      if (!body.category || !body.payment_method) return toast('收入类别和收款方式必填');
+      if (body.sales_amount === '' && body.recharge_amount === '') return toast('至少填写销售收入或充值金额之一');
 
-    let res;
-    if (r.id) {
-      res = await api('PUT', `/sales/${r.id}`, body);
-    } else {
-      res = await api('POST', '/sales', body);
+      let res;
+      if (r.id) {
+        res = await api('PUT', `/sales/${r.id}`, body);
+      } else {
+        res = await api('POST', '/sales', body);
+      }
+      if (res.error) return toast(res.error);
+      toast(r.id ? '已修改' : '已登记');
+      overlay.remove();
+      await loadSalesList();
+    } catch (err) {
+      console.error(err);
+      toast('保存失败：' + (err && err.message ? err.message : String(err)));
     }
-    if (res.error) return toast(res.error);
-    toast(r.id ? '已修改' : '已登记');
-    overlay.remove();
-    await loadSalesList();
   };
 }
 
