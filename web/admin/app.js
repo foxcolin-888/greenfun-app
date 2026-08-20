@@ -2033,6 +2033,10 @@ const SALES_CSS = `
 .sales-form-grid input,.sales-form-grid select,.sales-form-grid textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;box-sizing:border-box}
 .sales-form-grid textarea{resize:vertical;min-height:50px}
 .sales-form-btns{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
+.sales-photo-dropzone{position:relative;border:2px dashed var(--border);border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:center;min-height:60px;transition:border-color .2s,background .2s}
+.sales-photo-dropzone.dragover{border-color:var(--green-600);background:#f0f7ed}
+.sales-photo-dropzone .hint{color:var(--muted);font-size:13px;pointer-events:none}
+.sales-photo-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .weekly-summary{background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:20px;margin-top:16px}
 .weekly-summary h3{color:var(--green-800);margin:0 0 12px}
 .weekly-cust{border:1px solid var(--hair);border-radius:8px;margin-bottom:12px;overflow:hidden}
@@ -2079,6 +2083,7 @@ async function renderSales() {
       <select id="sfCategory"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm" id="sfSearch">🔍 查询</button>
       <button class="btn sm primary" id="sfAdd">+ 登记销售</button>
+      <select id="sfSummaryCat" style="width:130px"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm amber" id="sfWeekly">📊 本周汇总</button>
       <button class="btn sm amber" id="sfMonthly">📅 本月汇总</button>
     </div>
@@ -2171,9 +2176,10 @@ function openSalesForm(record) {
         <div><label>收入类别 *</label><select id="efCat">${cats.map(c => `<option value="${c}" ${r.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
         <div class="full"><label>商品名称</label><input id="efProduct" value="${esc(r.product_name || '')}" placeholder="如：完美生日盆栽" /></div>
         <div class="full"><label>商品图片</label>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div id="efPhotoDrop" class="sales-photo-dropzone">
             ${r.photo_url ? `<img src="${esc(r.photo_url)}" id="efImgPreview" class="sales-img">` : ''}
-            <input type="file" id="efPhoto" accept="image/*" style="font-size:13px" />
+            <span id="efPhotoHint" class="hint">${r.photo_url ? '点击或拖拽替换图片' : '点击选择或拖拽图片到此处'}</span>
+            <input type="file" id="efPhoto" accept="image/*" />
             <input type="hidden" id="efPhotoUrl" value="${esc(r.photo_url || '')}" />
           </div>
         </div>
@@ -2192,21 +2198,53 @@ function openSalesForm(record) {
 
   document.body.appendChild(overlay);
 
-  // 图片上传
+  // 图片上传（点击选择 + 拖拽上传）
+  const photoDrop = $('#efPhotoDrop', overlay);
   const photoInput = $('#efPhoto', overlay);
-  if (photoInput) photoInput.addEventListener('change', async e => {
-    const file = e.target.files[0]; if (!file) return;
+
+  async function uploadSalesPhoto(file) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('请选择图片文件');
     toast('上传中...');
-    const b64 = await readFileAsDataURL(file);
-    const r2 = await api('POST', '/upload', { data: b64, folder: 'sales' });
-    if (r2.url) {
-      $('#efPhotoUrl', overlay).value = r2.url;
-      let prev = $('#efImgPreview', overlay);
-      if (!prev) { prev = document.createElement('img'); prev.className = 'sales-img'; prev.id = 'efImgPreview'; photoInput.parentNode.insertBefore(prev, photoInput); }
-      prev.src = r2.url;
-      toast('已上传');
-    } else { toast('上传失败'); }
-  });
+    try {
+      const b64 = await readFileAsDataURL(file);
+      const r2 = await api('POST', '/upload', { data: b64, folder: 'sales' });
+      if (r2.url) {
+        $('#efPhotoUrl', overlay).value = r2.url;
+        let prev = $('#efImgPreview', overlay);
+        if (!prev) {
+          prev = document.createElement('img');
+          prev.className = 'sales-img';
+          prev.id = 'efImgPreview';
+          photoDrop.insertBefore(prev, photoDrop.firstChild);
+        }
+        prev.src = r2.url;
+        const hint = $('#efPhotoHint', overlay);
+        if (hint) hint.textContent = '点击或拖拽替换图片';
+        toast('已上传');
+      } else {
+        toast('上传失败' + (r2.error ? '：' + r2.error : ''));
+      }
+    } catch (err) {
+      toast('上传失败：' + (err && err.message ? err.message : String(err)));
+    }
+  }
+
+  if (photoInput) photoInput.addEventListener('change', e => uploadSalesPhoto(e.target.files[0]));
+
+  if (photoDrop) {
+    ['dragenter', 'dragover'].forEach(ev => photoDrop.addEventListener(ev, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      photoDrop.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(ev => photoDrop.addEventListener(ev, e => {
+      e.preventDefault();
+      e.stopPropagation();
+      photoDrop.classList.remove('dragover');
+    }));
+    photoDrop.addEventListener('drop', e => uploadSalesPhoto(e.dataTransfer.files[0]));
+  }
 
   $('#sfClose', overlay).onclick = () => overlay.remove();
   $('#sfCancel', overlay).onclick = () => overlay.remove();
@@ -2327,11 +2365,14 @@ function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
 
 async function loadWeeklySummary() {
   toast('加载本周数据...');
-  const data = await api('GET', '/sales/weekly');
+  const cat = $('#sfSummaryCat').value;
+  const params = new URLSearchParams();
+  if (cat) params.set('category', cat);
+  const data = await api('GET', '/sales/weekly' + (params.toString() ? '?' + params : ''));
   const panel = $('#weeklyPanel');
   panel.style.display = '';
   const custNames = Object.keys(data.customers || {});
-  const title = `本周消费汇总（${data.week_start} ~ ${data.week_end}）`;
+  const title = `本周消费汇总${cat ? ' · ' + cat : ''}（${data.week_start} ~ ${data.week_end}）`;
   if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
   const rows = [];
   for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);
@@ -2340,11 +2381,14 @@ async function loadWeeklySummary() {
 
 async function loadMonthlySummary() {
   toast('加载本月数据...');
-  const data = await api('GET', '/sales/monthly');
+  const cat = $('#sfSummaryCat').value;
+  const params = new URLSearchParams();
+  if (cat) params.set('category', cat);
+  const data = await api('GET', '/sales/monthly' + (params.toString() ? '?' + params : ''));
   const panel = $('#weeklyPanel');
   panel.style.display = '';
   const custNames = Object.keys(data.customers || {});
-  const title = `本月消费汇总（${data.date_start} ~ ${data.date_end}）`;
+  const title = `本月消费汇总${cat ? ' · ' + cat : ''}（${data.date_start} ~ ${data.date_end}）`;
   if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
   const rows = [];
   for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);

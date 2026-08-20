@@ -1448,16 +1448,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/sales/weekly":
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             ws = (qs.get("week_start") or [None])[0]
-            return self._json(_sales_weekly_summary(ws))
+            cat = (qs.get("category") or [None])[0]
+            return self._json(_sales_weekly_summary(ws, cat))
         # 本月客户消费汇总（须排在 /api/sales/<id> 之前）
         if path == "/api/sales/monthly":
             import datetime as dt
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             y = (qs.get("year") or [None])[0]
             m = (qs.get("month") or [None])[0]
+            cat = (qs.get("category") or [None])[0]
             yr = int(y) if y else dt.date.today().year
             mo = int(m) if m else dt.date.today().month
-            return self._json(_sales_monthly_summary(yr, mo))
+            return self._json(_sales_monthly_summary(yr, mo, cat))
         # 单条销售详情 /api/sales/<id>（需登录）
         if path.startswith("/api/sales/") and len(path.split("/")) == 4 and path.split("/")[3].isdigit():
             return self._json(_sales_get(int(path.split("/")[3])))
@@ -3375,8 +3377,8 @@ th{{background:#f5f7f4;color:#2D5A27;font-weight:600}}.r{{text-align:right}}
 </body></html>"""
 
 
-def _sales_weekly_summary(week_start=None):
-    """本周客户消费汇总：按客户分组，列出买了什么、消费多少"""
+def _sales_weekly_summary(week_start=None, category=None):
+    """本周客户消费汇总：按客户分组，列出买了什么、消费多少；可选按收入类别筛选"""
     import datetime as dt
     if not week_start:
         today = dt.date.today()
@@ -3388,10 +3390,13 @@ def _sales_weekly_summary(week_start=None):
     de = week_end.isoformat()
 
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ? ORDER BY customer_name, sale_date, id",
-        (ds, de),
-    ).fetchall()
+    sql = "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ?"
+    args = [ds, de]
+    if category:
+        sql += " AND category = ?"
+        args.append(category)
+    sql += " ORDER BY customer_name, sale_date, id"
+    rows = conn.execute(sql, args).fetchall()
     conn.close()
 
     # 按客户分组
@@ -3414,8 +3419,8 @@ def _sales_weekly_summary(week_start=None):
     }
 
 
-def _sales_monthly_summary(year=None, month=None):
-    """本月（或指定年月）客户消费汇总：复用 weekly 逻辑，日期范围改为整月"""
+def _sales_monthly_summary(year=None, month=None, category=None):
+    """本月（或指定年月）客户消费汇总：复用 weekly 逻辑，日期范围改为整月；可选按收入类别筛选"""
     import datetime as dt
     today = dt.date.today()
     if year is None:
@@ -3428,10 +3433,13 @@ def _sales_monthly_summary(year=None, month=None):
     else:
         de = dt.date(year, month + 1, 1) - dt.timedelta(days=1)
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ? ORDER BY customer_name, sale_date, id",
-        (ds.isoformat(), de.isoformat()),
-    ).fetchall()
+    sql = "SELECT * FROM daily_sales WHERE sale_date BETWEEN ? AND ?"
+    args = [ds.isoformat(), de.isoformat()]
+    if category:
+        sql += " AND category = ?"
+        args.append(category)
+    sql += " ORDER BY customer_name, sale_date, id"
+    rows = conn.execute(sql, args).fetchall()
     conn.close()
     customers = {}
     for r in rows:
