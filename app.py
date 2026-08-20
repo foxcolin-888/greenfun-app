@@ -3410,7 +3410,7 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"绿趣全流程管理系统已启动： http://localhost:{PORT}")
     print(f"数据库：{DB_PATH}")
-    print("默认账号：lvquguanliyuan/LvquAdmin#2026（管理员）、dianzhang/Dianzhang#2026（店长）、xiaoshou/Xiaoshou#2026（销售）、sheji/Sheji#2026（设计师）｜上线后请立即在后台「用户管理」改密并删示例账号")
+    print("系统已内置默认管理员账号，请首次登录后立即在后台「用户管理」修改管理员密码并删除示例员工账号。")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
