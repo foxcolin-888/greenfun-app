@@ -2036,6 +2036,15 @@ const SALES_CSS = `
 .weekly-cust-body table{width:100%;font-size:12px;border-collapse:collapse}
 .weekly-cust-body th,.weekly-cust-body td{padding:5px 8px;border-bottom:1px solid var(--hair);text-align:left}
 .weekly-total{text-align:right;font-size:15px;font-weight:bold;color:var(--green-800);padding:12px;background:#f0f7f2;border-radius:6px;margin-top:8px}
+.weekly-ledger{width:100%;border-collapse:collapse;font-size:12px;border:1px solid #d9d9d9}
+.weekly-ledger th{background:#f4a460;color:#fff;padding:8px 6px;text-align:center;font-weight:600;border:1px solid #d9d9d9;white-space:nowrap}
+.weekly-ledger td{padding:6px;border:1px solid #e0e0e0;vertical-align:middle;text-align:center}
+.weekly-ledger td:nth-child(6),.weekly-ledger td:nth-child(7){text-align:right}
+.weekly-ledger tbody tr:nth-child(even){background:#fff8f0}
+.weekly-ledger tbody tr:hover{background:#fff2e6}
+.weekly-ledger tfoot td{background:#fff2cc;font-weight:700;color:#333}
+.weekly-ledger .wk-img{width:44px;height:44px;object-fit:cover;border:1px solid #e0e0e0;border-radius:4px}
+.weekly-ledger .wk-empty{color:#bbb}
 `;
 
 async function renderSales() {
@@ -2251,36 +2260,66 @@ async function loadWeeklySummary() {
     return;
   }
 
-  let html = `<div class="weekly-summary">
-    <h3>📊 本周消费汇总（${data.week_start} ~ ${data.week_end}）</h3>`;
-
+  // 拍平所有记录，按日期排序
+  const rows = [];
   for (const name of custNames) {
     const c = data.customers[name];
-    html += `<div class="weekly-cust">
-      <div class="weekly-cust-head">
-        <span>👤 ${esc(name)} (${c.items.length} 笔)</span>
-        <span>销售 ￥${c.total_sales.toFixed(2)} | 充值 ￥${c.total_recharge.toFixed(2)}</span>
-      </div>
-      <div class="weekly-cust-body">
-        <table>
-          <thead><tr><th>日期</th><th>类别</th><th>商品</th><th>销售收入</th><th>充值</th><th>收款方式</th></tr></thead>
-          <tbody>`;
-    for (const item of c.items) {
-      html += `<tr>
-        <td>${esc(item.sale_date)}</td>
-        <td>${esc(item.category)}</td>
-        <td>${esc(item.product_name || '-')}</td>
-        <td class="r">￥${parseFloat(item.sales_amount||0).toFixed(2)}</td>
-        <td class="r">${parseFloat(item.recharge_amount||0)>0 ? '￥'+parseFloat(item.recharge_amount||0).toFixed(2):''}</td>
-        <td>${esc(item.payment_method||'-')}</td>
-      </tr>`;
-    }
-    html += `</tbody></table></div></div>`;
+    for (const item of c.items) rows.push(item);
+  }
+  rows.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
+
+  let html = `<div class="weekly-summary">
+    <h3>📊 本周消费汇总（${data.week_start} ~ ${data.week_end}）</h3>
+    <table class="weekly-ledger">
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>收入类别</th>
+          <th>商品名</th>
+          <th>图片</th>
+          <th>销售价格及折扣</th>
+          <th>充值金额</th>
+          <th>销售收入金额</th>
+          <th>收款方式</th>
+          <th>客户</th>
+          <th>销售单编号</th>
+          <th>开票抬头</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  for (const item of rows) {
+    const sa = parseFloat(item.sales_amount) || 0;
+    const ra = parseFloat(item.recharge_amount) || 0;
+    const code = 'SF-' + String(item.id).padStart(4, '0');
+    html += `<tr>
+      <td>${esc(item.sale_date)}</td>
+      <td>${esc(item.category)}</td>
+      <td style="text-align:left">${esc(item.product_name || '-')}</td>
+      <td>${item.photo_url ? `<img src="${esc(item.photo_url)}" class="wk-img" onerror="this.style.display='none'">` : '<span class="wk-empty">-</span>'}</td>
+      <td style="text-align:left">${esc(item.price_note || '-')}</td>
+      <td>${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
+      <td style="font-weight:600;color:#c65c2a">￥${sa.toFixed(2)}</td>
+      <td>${esc(item.payment_method || '-')}</td>
+      <td style="text-align:left">${esc(item.customer_name || '-')}</td>
+      <td>${code}</td>
+      <td><span class="wk-empty">-</span></td>
+      <td style="text-align:left">${esc(item.note || '')}</td>
+    </tr>`;
   }
 
-  html += `<div class="weekly-total">
-    📈 本周总计：销售 ￥${data.grand_total_sales.toFixed(2)} | 充值 ￥${data.grand_total_recharge.toFixed(2)}
-  </div></div>`;
+  html += `</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" style="text-align:right">本周合计</td>
+          <td style="text-align:right">￥${data.grand_total_recharge.toFixed(2)}</td>
+          <td style="text-align:right">￥${data.grand_total_sales.toFixed(2)}</td>
+          <td colspan="5"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>`;
   panel.innerHTML = html;
 }
 
