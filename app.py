@@ -2605,6 +2605,12 @@ class Handler(BaseHTTPRequestHandler):
                     payload["image_url"] = img_url
                 else:
                     payload["image"] = img_url
+        # Gemini OpenAI 兼容层：显式要求返回 b64_json（避免 url 临时链接下载失败），
+        # 且单次仅生成 1 张（Gemini images.generate 实际只返回 1 张）
+        is_gemini = ("generativelanguage.googleapis.com" in base) or model.lower().startswith("gemini")
+        if is_gemini:
+            payload["response_format"] = "b64_json"
+            payload["n"] = 1
         req = urllib.request.Request(
             base.rstrip("/") + "/images/generations",
             data=json.dumps(payload).encode("utf-8"),

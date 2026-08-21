@@ -1032,8 +1032,8 @@ async function renderSettings() {
         </select></div>
         <div id="gOpenaiBox" style="display:${s.img_gen_provider === 'openai' ? 'block' : 'none'}">
           <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="从模型服务商控制台获取"></div>
-          <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="如 https://api.siliconflow.cn/v1"></div>
-          <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / doubao-seedream-5-0-260128"></div>
+          <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="如 https://api.siliconflow.cn/v1 或 https://generativelanguage.googleapis.com/v1beta/openai（Gemini）"></div>
+          <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / doubao-seedream-5-0-260128 / gemini-2.5-flash-image"></div>
         </div>
         <div class="pfield" style="margin-top:10px"><button class="btn sm ghost" id="gClearCache">🗑 清除 API 缓存并重置</button></div>
       </div>
