@@ -40,24 +40,7 @@ const IMG_MODELS = [
   { id: 'pollinations-flux', name: 'Pollinations Flux（免费免 Key）', provider: 'pollinations', model: 'flux', base_url: '', credit: 0, quality: 'standard', desc: '免费免 Key，速度中等，适合快速出图' },
   { id: 'pollinations-turbo', name: 'Pollinations Turbo（免费免 Key）', provider: 'pollinations', model: 'turbo', base_url: '', credit: 0, quality: 'standard', desc: '免费快速版，适合草图预览' },
   { id: 'pollinations-realism', name: 'Pollinations 写实（免费免 Key）', provider: 'pollinations', model: 'flux-realism', base_url: '', credit: 0, quality: 'standard', desc: '免费写实风格增强' },
-  { id: 'hf-flux-schnell', name: 'FLUX.1-schnell（Hugging Face 免费）', provider: 'hf', model: 'black-forest-labs/FLUX.1-schnell', base_url: '', credit: 0, quality: 'standard', desc: '当下最火开源 FLUX 模型，需 HF Token（免费账户有额度）' },
-  { id: 'siliconflow-flux-11', name: '硅基流动 FLUX.1（国内低价）', provider: 'openai', model: 'black-forest-labs/FLUX.1-schnell', base_url: 'https://api.siliconflow.cn/v1', credit: 3, quality: 'standard', desc: '国内 SiliconFlow 加速，价格便宜，需 API Key' },
-  { id: 'siliconflow-qvq', name: '硅基流动 QVQ-72B-Preview（国内低价）', provider: 'openai', model: 'QVQ-72B-Preview', base_url: 'https://api.siliconflow.cn/v1', credit: 3, quality: 'standard', desc: '硅基流动多模态模型，需 API Key' },
-  { id: 'doubao-seedream-5-lite', name: '豆包 Seedream 5.0 Lite', provider: 'openai', model: 'doubao-seedream-5-0-lite-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 5, quality: 'standard', desc: '豆包最新轻量版，支持 2K/3K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-5', name: '豆包 Seedream 5.0', provider: 'openai', model: 'doubao-seedream-5-0-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 8, quality: 'standard', desc: '豆包旗舰版，支持 2K/3K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-4-5', name: '豆包 Seedream 4.5', provider: 'openai', model: 'doubao-seedream-4-5-251128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 7, quality: 'standard', desc: '豆包 4.5，支持 2K/4K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-4', name: '豆包 Seedream 4.0', provider: 'openai', model: 'doubao-seedream-4-0-250828', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 6, quality: 'standard', desc: '豆包 4.0，支持 1K/2K/4K，需火山引擎 API Key' },
-  { id: 'doubao-seedream-3', name: '豆包 Seedream 3.0-t2i', provider: 'openai', model: 'doubao-seedream-3-0-t2i-250415', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: 4, quality: 'standard', desc: '豆包文生图基础版，512–2048 像素，需火山引擎 API Key' },
-  { id: 'openai-dall-e-3', name: 'OpenAI DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: '', credit: 10, quality: 'hd', desc: 'OpenAI 官方，按张计费' },
-  { id: 'openai-gpt-image-1', name: 'OpenAI GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: '', credit: 12, quality: 'hd', desc: 'OpenAI 最新生图模型，按张计费' },
-  // —— APIYI 聚合网关（OpenAI 兼容，平台 Key 由系统设置统一配置）——
-  { id: 'apiyi-seedream-5', name: 'APIYI · 豆包 Seedream 5.0', provider: 'openai', model: 'seedream-5-0-260128', base_url: 'https://api.apiyi.com/v1', credit: 5, quality: 'standard', desc: 'APIYI 聚合 · 豆包 Seedream 5.0，需 APIYI 平台 Key' },
-  { id: 'apiyi-dall-e-3', name: 'APIYI · DALL·E 3', provider: 'openai', model: 'dall-e-3', base_url: 'https://api.apiyi.com/v1', credit: 10, quality: 'hd', desc: 'APIYI 聚合 · OpenAI DALL·E 3，需 APIYI 平台 Key' },
-  { id: 'apiyi-gpt-image-1', name: 'APIYI · GPT-Image-1', provider: 'openai', model: 'gpt-image-1', base_url: 'https://api.apiyi.com/v1', credit: 12, quality: 'hd', desc: 'APIYI 聚合 · OpenAI GPT-Image-1，需 APIYI 平台 Key' },
-  { id: 'apiyi-flux-pro', name: 'APIYI · FLUX Pro', provider: 'openai', model: 'flux-pro', base_url: 'https://api.apiyi.com/v1', credit: 6, quality: 'standard', desc: 'APIYI 聚合 · FLUX Pro 写实，需 APIYI 平台 Key' },
-  { id: 'apiyi-nano-banana', name: 'APIYI · NanoBanana Pro', provider: 'openai', model: 'nano-banana-pro', base_url: 'https://api.apiyi.com/v1', credit: 4, quality: 'standard', desc: 'APIYI 聚合 · NanoBanana 高性价比，需 APIYI 平台 Key' },
-  { id: 'apiyi-gemini-image', name: 'APIYI · Gemini 生图', provider: 'openai', model: 'gemini-2.5-flash-image', base_url: 'https://api.apiyi.com/v1', credit: 5, quality: 'standard', desc: 'APIYI 聚合 · Gemini 图像生成，需 APIYI 平台 Key' },
-  { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', credit: 5, quality: 'standard', desc: '读取系统设置→生图模型中的配置' },
+  { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', credit: null, quality: 'standard', desc: '读取系统设置→生图模型 API 接口中的配置（如 Gemini）' },
 ];
 const ASPECT_RATIOS = [
   { id: 'auto', label: '自动', size: '' },
@@ -1224,7 +1207,7 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>③ AI 生成效果图</h3>
-        <div class="hint">选择模型、画面比例与画质后直接生成，画质可选至 4K，也可选「自定义 (不限制)」填任意宽×高。默认 Pollinations 免费免 Key、开箱即用；豆包 / OpenAI / 硅基流动等付费模型由管理员在「系统设置 → 生图模型」统一配置平台 API Key，员工无需填写任何 Key。</div>
+        <div class="hint">选择模型、画面比例与画质后直接生成。默认「Pollinations」免费免 Key、开箱即用；如需使用 Gemini 等自有模型，请在「系统设置 → 生图模型 API 接口」中配置，并选择「自定义（使用系统设置）」。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
         <div class="check-row" style="margin:10px 0">
           <label><input type="checkbox" id="scRefPhoto" ${s.photos.length ? 'checked' : ''} ${s.photos.length ? '' : 'disabled'}> 以现场照片为参考图（图生图 / 垫图）</label>
@@ -1234,7 +1217,7 @@ function renderSchemeEditor() {
         <div class="gen-control-bar">
           <div class="gen-field">
             <label>生图模型</label>
-            <select id="scModel" class="wfull">${IMG_MODELS.map(m => `<option value="${m.id}" ${s.gen_config.model_id === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</select>
+            <select id="scModel" class="wfull">${(() => { const mp = findImgModelPreset(s.gen_config); return IMG_MODELS.map(m => `<option value="${m.id}" ${mp.id === m.id ? 'selected' : ''}>${m.name}</option>`).join(''); })()}</select>
             <div class="gen-field-hint" id="scModelHint"></div>
           </div>
           <div class="gen-field">
@@ -1390,11 +1373,15 @@ function onSchemeQualityChange() {
 }
 function updateGenCreditPreview() {
   const preset = IMG_MODELS.find(m => m.id === $('#scModel').value) || IMG_MODELS[0];
-  const n = +($('#scN') ? $('#scN').value : 1) || 1;
-  const cost = (preset.credit || 0) * n;
   const creditTag = $('#scCreditTag');
   const balanceTag = $('#scBalanceTag');
-  if (creditTag) creditTag.textContent = cost === 0 ? '本次免费' : `本次消耗 ${cost} 积分`;
+  if (preset.id === 'custom') {
+    if (creditTag) creditTag.textContent = '按系统设置计费';
+  } else {
+    const n = +($('#scN') ? $('#scN').value : 1) || 1;
+    const cost = (preset.credit || 0) * n;
+    if (creditTag) creditTag.textContent = cost === 0 ? '本次免费' : `本次消耗 ${cost} 积分`;
+  }
   if (balanceTag) balanceTag.textContent = `余额 ${state.creditBalance || 0} 积分`;
 }
 function updateGenSizePreview() {
