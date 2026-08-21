@@ -1024,30 +1024,18 @@ async function renderSettings() {
         <div class="pfield"><label>备注说明</label><textarea id="pNote" class="wfull" rows="3" placeholder="报价有效期、不含项等">${esc(s.print_note)}</textarea></div>
       </div>
       <div class="section">
-        <h3>④ 生图模型（AI 效果图）</h3>
-        <div class="hint">平台级 API Key 由管理员统一配置，员工生图时扣积分即可，无需每个人都申请 Key。如未配置平台 Key，员工可在方案设计页临时填写自己的 Key。</div>
-        <div class="pfield"><label>快速选择模型</label><select id="gPreset" class="wfull">
-          <option value="">— 手动填写 —</option>
-          ${IMG_MODELS.filter(m => m.id !== 'custom').map(m => `<option value="${m.id}">${m.name}</option>`).join('')}
-        </select></div>
-        <div class="pfield"><label>供应商</label><select id="gProvider" class="wfull">
+        <h3>④ 生图模型 API 接口</h3>
+        <div class="hint">管理员统一配置后，员工无需再填 Key 即可生图。</div>
+        <div class="pfield"><label>接口类型</label><select id="gProvider" class="wfull">
           <option value="pollinations" ${s.img_gen_provider === 'pollinations' ? 'selected' : ''}>Pollinations（免费 · 免 Key）</option>
-          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容（豆包 / 通义万相 / 智谱 / 火山 / 硅基流动等）</option>
-          <option value="hf" ${s.img_gen_provider === 'hf' ? 'selected' : ''}>Hugging Face 免费推理</option>
+          <option value="openai" ${s.img_gen_provider === 'openai' ? 'selected' : ''}>OpenAI 兼容 API（豆包 / 硅基流动 / 智谱等）</option>
         </select></div>
-        <div class="pfield"><label>平台级 API Key（全站共用）</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="豆包填火山引擎 API Key；硅基流动/智谱/通义万相填对应 Key；HF 填 Token"></div>
-        <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 doubao-seedream-5-0-260128 / gpt-image-1 / black-forest-labs/FLUX.1-schnell"></div>
-        <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="豆包 https://ark.cn-beijing.volces.com/api/v3；硅基 https://api.siliconflow.cn/v1；OpenAI 留空"></div>
-        <div class="pfield"><label>默认尺寸</label><select id="gSize" class="wfull">
-          ${['1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', '512x512', '2048x2048', '2048x1152', '1152x2048'].map(o => `<option ${s.img_gen_size === o ? 'selected' : ''}>${o}</option>`).join('')}
-        </select></div>
-        <div class="pfield"><label>默认画质</label><select id="gQuality" class="wfull">
-          <option value="standard" ${s.img_gen_quality === 'standard' ? 'selected' : ''}>standard（标清）</option>
-          <option value="hd" ${s.img_gen_quality === 'hd' ? 'selected' : ''}>hd（高清）</option>
-        </select></div>
-        <div class="pfield"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="gWatermark" ${s.img_gen_watermark==='1'?'checked':''}> 添加 "AI生成" 水印（仅部分模型支持，如豆包）</label></div>
-        <div class="pfield"><label>AI 分析模型（多模态）</label><input id="gAnalysisModel" class="wfull" value="${esc(s.img_analysis_model || 'gpt-4o-mini')}" placeholder="如 gpt-4o-mini / qwen-vl-max / gpt-4o，用于根据效果图生成设计理念与识别物料清单"></div>
-        <div class="hint" style="margin-top:6px">豆包 Seedream 模型 ID 示例：doubao-seedream-5-0-260128、doubao-seedream-5-0-lite-260128、doubao-seedream-4-5-251128、doubao-seedream-4-0-250828、doubao-seedream-3-0-t2i-250415。</div>
+        <div id="gOpenaiBox" style="display:${s.img_gen_provider === 'openai' ? 'block' : 'none'}">
+          <div class="pfield"><label>API Key</label><input id="gKey" class="wfull" type="password" value="${esc(s.img_gen_api_key || '')}" placeholder="从模型服务商控制台获取"></div>
+          <div class="pfield"><label>Base URL</label><input id="gBase" class="wfull" value="${esc(s.img_gen_base_url || '')}" placeholder="如 https://api.siliconflow.cn/v1"></div>
+          <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / doubao-seedream-5-0-260128"></div>
+        </div>
+        <div class="pfield" style="margin-top:10px"><button class="btn sm ghost" id="gClearCache">🗑 清除 API 缓存并重置</button></div>
       </div>
 
       <div class="section">
@@ -1078,16 +1066,31 @@ async function renderSettings() {
   bindPm();
   $('#pmAdd').addEventListener('click', () => { pmEdit.push({ label: '', note: '' }); refreshPm(); });
 
-  // 快速选择模型自动填充
-  $('#gPreset').addEventListener('change', () => {
-    const id = $('#gPreset').value;
-    if (!id) return;
-    const m = IMG_MODELS.find(x => x.id === id);
-    if (!m) return;
-    $('#gProvider').value = m.provider;
-    $('#gModel').value = m.model;
-    $('#gBase').value = m.base_url;
-    if (m.quality === 'hd') $('#gQuality').value = 'hd';
+  // 接口类型切换显示/隐藏 OpenAI 兼容配置
+  const toggleOpenaiBox = () => {
+    const box = $('#gOpenaiBox');
+    if (!box) return;
+    box.style.display = $('#gProvider').value === 'openai' ? 'block' : 'none';
+  };
+  $('#gProvider').addEventListener('change', toggleOpenaiBox);
+  toggleOpenaiBox();
+
+  // 清除 API 缓存并重置
+  $('#gClearCache').addEventListener('click', async () => {
+    if (!confirm('确定清除所有生图 API 配置并恢复默认吗？\n这会清空已保存的 Key、模型、Base URL 等。')) return;
+    await api('PUT', '/settings', {
+      img_gen_provider: 'pollinations',
+      img_gen_api_key: '',
+      img_gen_model: '',
+      img_gen_base_url: '',
+      img_gen_size: '',
+      img_gen_quality: '',
+      img_gen_watermark: '0',
+      img_analysis_model: '',
+    });
+    state.settings = null;
+    toast('API 缓存已清除，页面将刷新');
+    setTimeout(() => location.reload(), 800);
   });
 
   $('#sSave').addEventListener('click', async () => {
@@ -1106,10 +1109,10 @@ async function renderSettings() {
       img_gen_api_key: $('#gKey').value,
       img_gen_model: $('#gModel').value,
       img_gen_base_url: $('#gBase').value,
-      img_gen_size: $('#gSize').value,
-      img_gen_quality: $('#gQuality').value,
-      img_gen_watermark: $('#gWatermark').checked ? '1' : '0',
-      img_analysis_model: $('#gAnalysisModel').value,
+      img_gen_size: '',
+      img_gen_quality: '',
+      img_gen_watermark: '0',
+      img_analysis_model: '',
       credits_enabled: $('#gCreditsEnabled').checked ? '1' : '0',
       img_credit_pollinations: $('#gCreditPollinations').value,
       img_credit_hf: $('#gCreditHf').value,
