@@ -568,6 +568,7 @@ def init_db():
         category TEXT NOT NULL,
         product_name TEXT DEFAULT '',
         photo_url TEXT DEFAULT '',
+        photo_urls TEXT DEFAULT '',
         price_note TEXT DEFAULT '',
         recharge_amount REAL DEFAULT 0,
         sales_amount REAL DEFAULT 0,
@@ -578,6 +579,13 @@ def init_db():
         created_at TEXT
     )""")
     conn.commit()
+
+    # 数据库迁移：已有库补列（兼容历史数据，旧记录只有单张 photo_url）
+    try:
+        c.execute("ALTER TABLE daily_sales ADD COLUMN photo_urls TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # 列已存在则忽略
 
     # 种子：账号
     if conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
@@ -3238,7 +3246,27 @@ def _sales_list(params=None):
             sql = "SELECT * FROM daily_sales WHERE " + " AND ".join(conds) + " ORDER BY sale_date DESC, id DESC"
     rows = conn.execute(sql, args).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    out = [dict(r) for r in rows]
+    for rec in out:
+        rec["photo_urls"] = _parse_sales_photos(rec)
+    return out
+
+
+def _parse_sales_photos(rec):
+    """统一返回图片数组：优先 photo_urls(JSON)，兼容旧 photo_url 单张"""
+    raw = rec.get("photo_urls") or ""
+    urls = []
+    if raw:
+        try:
+            urls = json.loads(raw)
+        except Exception:
+            urls = []
+    if not isinstance(urls, list):
+        urls = []
+    urls = [u for u in urls if u]
+    if not urls and rec.get("photo_url"):
+        urls = [rec["photo_url"]]
+    return urls
 
 
 def _sales_get(sid):
@@ -3246,23 +3274,42 @@ def _sales_get(sid):
     conn = get_db()
     r = conn.execute("SELECT * FROM daily_sales WHERE id=?", (sid,)).fetchone()
     conn.close()
-    return dict(r) if r else None
+    if not r:
+        return None
+    rec = dict(r)
+    rec["photo_urls"] = _parse_sales_photos(rec)
+    return rec
 
 
 def _sales_create(body, user=None):
     """新建销售记录"""
     t = now_str()
     conn = get_db()
+    photo_urls = body.get("photo_urls")
+    if isinstance(photo_urls, list):
+        photo_urls = json.dumps(photo_urls, ensure_ascii=False)
+    elif not photo_urls:
+        photo_urls = ""
+    # 封面图：优先用传入的 photo_url，否则取 photo_urls 第一张
+    cover = body.get("photo_url") or ""
+    if not cover and photo_urls:
+        try:
+            arr = json.loads(photo_urls)
+            if isinstance(arr, list) and arr:
+                cover = arr[0]
+        except Exception:
+            pass
     cur = conn.execute("""
-        INSERT INTO daily_sales (sale_date, category, product_name, photo_url, price_note,
+        INSERT INTO daily_sales (sale_date, category, product_name, photo_url, photo_urls, price_note,
             recharge_amount, sales_amount, payment_method, customer_name, note,
             created_by, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         body.get("sale_date", t[:10]),
         body.get("category", ""),
         body.get("product_name", ""),
-        body.get("photo_url", ""),
+        cover,
+        photo_urls,
         body.get("price_note", ""),
         float(body.get("recharge_amount") or 0),
         float(body.get("sales_amount") or 0),
@@ -3283,13 +3330,16 @@ def _sales_update(sid, body):
     conn = get_db()
     fields = []
     values = []
-    for k in ("sale_date","category","product_name","photo_url","price_note",
+    for k in ("sale_date","category","product_name","photo_url","photo_urls","price_note",
               "recharge_amount","sales_amount","payment_method","customer_name","note"):
         if k in body:
             fields.append(f"{k}=?")
             # numeric fields
             if k in ("recharge_amount","sales_amount"):
                 values.append(float(body[k]) or 0)
+            elif k == "photo_urls":
+                v = body[k]
+                values.append(json.dumps(v, ensure_ascii=False) if isinstance(v, list) else (v or ""))
             else:
                 values.append(body[k])
     if not fields:
@@ -3328,9 +3378,13 @@ def _sales_receipt_html(sid):
         recharge_row = ('<tr><th class="r">充值金额</th><td class="r">'
                         + "&yen;" + ("%.2f" % recharge_amt) + "</td></tr>")
     photo_row = ""
-    if s.get("photo_url"):
-        photo_row = ('<tr><th>商品图片</th><td><img src="' + esc(s.get("photo_url", ""))
-                     + '" style="max-height:120px;border-radius:4px"></td></tr>')
+    photos = s.get("photo_urls") or []
+    if photos:
+        photo_imgs = "".join(
+            '<img src="' + esc(u) + '" style="max-height:120px;border-radius:4px;margin:4px">'
+            for u in photos
+        )
+        photo_row = '<tr><th>商品图片</th><td>' + photo_imgs + '</td></tr>'
     note_row = ""
     if s.get("note"):
         note_row = "<tr><th>备注</th><td>" + esc(s.get("note", "")) + "</td></tr>"

@@ -2033,10 +2033,15 @@ const SALES_CSS = `
 .sales-form-grid input,.sales-form-grid select,.sales-form-grid textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;box-sizing:border-box}
 .sales-form-grid textarea{resize:vertical;min-height:50px}
 .sales-form-btns{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
-.sales-photo-dropzone{position:relative;border:2px dashed var(--border);border-radius:8px;padding:10px 12px;display:flex;gap:10px;align-items:center;min-height:60px;transition:border-color .2s,background .2s}
+.sales-photo-dropzone{position:relative;border:2px dashed var(--border);border-radius:8px;padding:14px;min-height:60px;transition:border-color .2s,background .2s;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .sales-photo-dropzone.dragover{border-color:var(--green-600);background:#f0f7ed}
-.sales-photo-dropzone .hint{color:var(--muted);font-size:13px;pointer-events:none}
-.sales-photo-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.sales-photo-grid{display:flex;flex-wrap:wrap;gap:10px;z-index:2}
+.sales-photo-thumb{position:relative;width:72px;height:72px;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:#f5f5f5;z-index:2}
+.sales-photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.sales-photo-thumb .del{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;cursor:pointer;font-size:12px;line-height:20px;text-align:center;padding:0;z-index:3}
+.sales-photo-thumb .del:hover{background:rgba(0,0,0,.8)}
+.sales-photo-dropzone .hint{color:var(--muted);font-size:13px;pointer-events:none;margin-left:4px}
+.sales-photo-dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;z-index:1}
 .weekly-summary{background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow);padding:20px;margin-top:16px}
 .weekly-summary h3{color:var(--green-800);margin:0 0 12px}
 .weekly-cust{border:1px solid var(--hair);border-radius:8px;margin-bottom:12px;overflow:hidden}
@@ -2053,6 +2058,7 @@ const SALES_CSS = `
 .weekly-ledger tbody tr:hover{background:#fff2e6}
 .weekly-ledger tfoot td{background:#fff2cc;font-weight:700;color:#333}
 .weekly-ledger .wk-img{width:44px;height:44px;object-fit:cover;border:1px solid #e0e0e0;border-radius:4px}
+.weekly-ledger .wk-imgs{display:flex;flex-wrap:wrap;gap:4px}
 .weekly-ledger .wk-empty{color:#bbb}
 .summary-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:12px;flex-wrap:wrap}
 .summary-head h3{margin:0;font-size:17px;color:var(--green-800)}
@@ -2165,6 +2171,9 @@ function openSalesForm(record) {
   const r = record || {};
   const cats = state._salesCats || [];
   const pmts = state._salesPmts || [];
+  // 初始化图片列表：优先读 photo_urls 数组，兼容旧数据单张 photo_url
+  const initPhotos = Array.isArray(r.photo_urls) ? r.photo_urls.slice()
+    : (r.photo_url ? [r.photo_url] : []);
 
   const overlay = document.createElement('div');
   overlay.className = 'sales-form-overlay';
@@ -2175,12 +2184,11 @@ function openSalesForm(record) {
         <div><label>日期 *</label><input type="date" id="efDate" value="${esc(r.sale_date || new Date().toISOString().slice(0,10))}" /></div>
         <div><label>收入类别 *</label><select id="efCat">${cats.map(c => `<option value="${c}" ${r.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
         <div class="full"><label>商品名称</label><input id="efProduct" value="${esc(r.product_name || '')}" placeholder="如：完美生日盆栽" /></div>
-        <div class="full"><label>商品图片</label>
+        <div class="full"><label>商品图片（可上传多张）</label>
           <div id="efPhotoDrop" class="sales-photo-dropzone">
-            ${r.photo_url ? `<img src="${esc(r.photo_url)}" id="efImgPreview" class="sales-img">` : ''}
-            <span id="efPhotoHint" class="hint">${r.photo_url ? '点击或拖拽替换图片' : '点击选择或拖拽图片到此处'}</span>
-            <input type="file" id="efPhoto" accept="image/*" />
-            <input type="hidden" id="efPhotoUrl" value="${esc(r.photo_url || '')}" />
+            <div id="efPhotoGrid" class="sales-photo-grid"></div>
+            <span id="efPhotoHint" class="hint">${initPhotos.length ? '已选 ' + initPhotos.length + ' 张，点击或拖拽可继续添加' : '点击选择或拖拽多张图片到此处'}</span>
+            <input type="file" id="efPhoto" accept="image/*" multiple />
           </div>
         </div>
         <div><label>销售收入金额（元）*</label><input type="number" id="efSalesAmt" value="${r.sales_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
@@ -2198,29 +2206,43 @@ function openSalesForm(record) {
 
   document.body.appendChild(overlay);
 
-  // 图片上传（点击选择 + 拖拽上传）
+  // 图片上传（点击选择多张 + 拖拽多张上传）
   const photoDrop = $('#efPhotoDrop', overlay);
   const photoInput = $('#efPhoto', overlay);
+  const photoGrid = $('#efPhotoGrid', overlay);
+  const photoHint = $('#efPhotoHint', overlay);
+  let photos = initPhotos.slice();
+
+  function renderPhotos() {
+    photoGrid.innerHTML = photos.map((u, i) =>
+      `<div class="sales-photo-thumb"><img src="${esc(u)}"><button type="button" class="del" data-i="${i}">✕</button></div>`
+    ).join('');
+    photoGrid.querySelectorAll('.del').forEach(b => {
+      b.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        photos.splice(Number(b.dataset.i), 1);
+        renderPhotos();
+      });
+    });
+    if (photoHint) {
+      photoHint.textContent = photos.length
+        ? `已选 ${photos.length} 张，点击或拖拽可继续添加`
+        : '点击选择或拖拽多张图片到此处';
+    }
+  }
+  renderPhotos();
 
   async function uploadSalesPhoto(file) {
     if (!file) return;
-    if (!file.type.startsWith('image/')) return toast('请选择图片文件');
+    if (!file.type.startsWith('image/')) return;
     toast('上传中...');
     try {
       const b64 = await readFileAsDataURL(file);
       const r2 = await api('POST', '/upload', { data: b64, folder: 'sales' });
       if (r2.url) {
-        $('#efPhotoUrl', overlay).value = r2.url;
-        let prev = $('#efImgPreview', overlay);
-        if (!prev) {
-          prev = document.createElement('img');
-          prev.className = 'sales-img';
-          prev.id = 'efImgPreview';
-          photoDrop.insertBefore(prev, photoDrop.firstChild);
-        }
-        prev.src = r2.url;
-        const hint = $('#efPhotoHint', overlay);
-        if (hint) hint.textContent = '点击或拖拽替换图片';
+        photos.push(r2.url);
+        renderPhotos();
         toast('已上传');
       } else {
         toast('上传失败' + (r2.error ? '：' + r2.error : ''));
@@ -2230,7 +2252,11 @@ function openSalesForm(record) {
     }
   }
 
-  if (photoInput) photoInput.addEventListener('change', e => uploadSalesPhoto(e.target.files[0]));
+  if (photoInput) photoInput.addEventListener('change', e => {
+    const files = Array.from(e.target.files || []);
+    for (const f of files) uploadSalesPhoto(f);
+    photoInput.value = '';  // 允许重复选择同一文件
+  });
 
   if (photoDrop) {
     ['dragenter', 'dragover'].forEach(ev => photoDrop.addEventListener(ev, e => {
@@ -2243,7 +2269,10 @@ function openSalesForm(record) {
       e.stopPropagation();
       photoDrop.classList.remove('dragover');
     }));
-    photoDrop.addEventListener('drop', e => uploadSalesPhoto(e.dataTransfer.files[0]));
+    photoDrop.addEventListener('drop', e => {
+      const files = Array.from(e.dataTransfer.files || []);
+      for (const f of files) uploadSalesPhoto(f);
+    });
   }
 
   $('#sfClose', overlay).onclick = () => overlay.remove();
@@ -2254,7 +2283,8 @@ function openSalesForm(record) {
         sale_date: $('#efDate', overlay).value,
         category: $('#efCat', overlay).value,
         product_name: $('#efProduct', overlay).value,
-        photo_url: $('#efPhotoUrl', overlay).value,
+        photo_url: photos[0] || '',
+        photo_urls: photos,
         price_note: $('#efPriceNote', overlay).value,
         recharge_amount: $('#efRechargeAmt', overlay).value,
         sales_amount: $('#efSalesAmt', overlay).value,
@@ -2333,11 +2363,18 @@ function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
     const sa = parseFloat(item.sales_amount) || 0;
     const ra = parseFloat(item.recharge_amount) || 0;
     const code = 'SF-' + String(item.id).padStart(4, '0');
+    let ph = item.photo_urls;
+    if (typeof ph === 'string') { try { ph = JSON.parse(ph); } catch (e) { ph = []; } }
+    if (!Array.isArray(ph)) ph = [];
+    if (!ph.length && item.photo_url) ph = [item.photo_url];
+    const phHtml = ph.length
+      ? ph.map(u => `<img src="${esc(u)}" class="wk-img" onerror="this.style.display='none'">`).join('')
+      : '<span class="wk-empty">-</span>';
     html += `<tr>
       <td>${esc(item.sale_date)}</td>
       <td>${esc(item.category)}</td>
       <td style="text-align:left">${esc(item.product_name || '-')}</td>
-      <td>${item.photo_url ? `<img src="${esc(item.photo_url)}" class="wk-img" onerror="this.style.display='none'">` : '<span class="wk-empty">-</span>'}</td>
+      <td><div class="wk-imgs">${phHtml}</div></td>
       <td style="text-align:left">${esc(item.price_note || '-')}</td>
       <td>${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
       <td style="font-weight:600;color:#c65c2a">￥${sa.toFixed(2)}</td>
@@ -2410,6 +2447,7 @@ window.printLedger = function(title) {
     + 'tbody tr:nth-child(even){background:#fff8f0}'
     + 'tfoot td{background:#fff2cc;font-weight:700}'
     + 'img.wk-img{width:44px;height:44px;object-fit:cover}'
+    + '.wk-imgs{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}'
     + '@media print{button{display:none}body{padding:0}}'
     + '</style></head><body><h2>' + title + '</h2>' + panel.innerHTML + '</body></html>');
   w.document.close();
