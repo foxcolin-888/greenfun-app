@@ -914,6 +914,7 @@ async function renderUsers() {
     <div class="toolbar">
       <b style="color:var(--green-900)">员工账号（${users.length}）</b>
       <div class="spacer"></div>
+      <button class="btn sm" id="uCredits">💎 积分管理</button>
       <button class="btn sm" id="uNew">+ 新增账号</button>
     </div>
     <table class="price-table">
@@ -929,6 +930,7 @@ async function renderUsers() {
     </table>
     <div class="hint" style="margin-top:12px">角色权限：<b>管理员</b>=全部含账号与价格库；<b>店长</b>=看全部客户+审批报价+改价格库；<b>销售顾问</b>=仅自己的客户；<b>设计师</b>=看全部客户+做方案报价。</div>`;
   $('#uNew').addEventListener('click', () => editUser(null));
+  $('#uCredits').addEventListener('click', () => switchView('credits'));
   $$('[data-eu]').forEach(b => b.addEventListener('click', () => editUser(JSON.parse(b.dataset.eu))));
   $$('[data-du]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm('确认停用该账号？')) return;
@@ -982,7 +984,15 @@ async function renderSettings() {
 
   const app = $('#app');
   app.innerHTML = `
-    <div class="toolbar"><b style="color:var(--green-900)">系统设置（全部可后台自定义）</b></div>
+    <div class="toolbar"><b style="color:var(--green-900)">系统设置</b></div>
+    <div class="section" style="margin:12px 0 16px">
+      <h3 style="margin-bottom:10px">快捷入口</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn sm" id="setCases">🖼 案例管理</button>
+        <button class="btn sm" id="setSite">🎨 站点装修</button>
+        <button class="btn sm" id="setPrices">💰 价格库</button>
+      </div>
+    </div>
     <div class="settings-grid">
       <div class="section">
         <h3>① 利润率档位</h3>
@@ -1057,6 +1067,11 @@ async function renderSettings() {
   };
   $('#gProvider').addEventListener('change', toggleOpenaiBox);
   toggleOpenaiBox();
+
+  // 系统设置：快捷入口
+  $('#setCases').addEventListener('click', () => switchView('cases'));
+  $('#setSite').addEventListener('click', () => switchView('site'));
+  $('#setPrices').addEventListener('click', () => switchView('prices'));
 
   // 清除 API 缓存并重置
   $('#gClearCache').addEventListener('click', async () => {
