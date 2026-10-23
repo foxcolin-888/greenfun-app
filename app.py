@@ -3621,7 +3621,11 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 .toolbar .tb-hint{color:#999;font-size:12px}
 .sheet-wrap{padding:10mm;display:flex;justify-content:center}
 .sheet{display:grid;grid-auto-rows:auto;width:100%;max-width:100%}
+.rcpt-group{display:flex;break-inside:avoid;page-break-inside:avoid}
+.rcpt-group.multi{gap:3mm}
 .rcpt{display:flex;flex-direction:column;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
+.rcpt-group .rcpt{flex:1 1 0;min-width:0}
+.rc-copy{font-weight:600;color:#2D5A27;background:#eef4ec;border:1px solid #cfe0cb;border-radius:3px;padding:0 4px;font-size:.92em}
 .rcpt[contenteditable="true"]{outline:1px dashed #8bbf7a;background:#fcfefb}
 .rc-h{text-align:center;font-weight:700;color:#2D5A27;font-size:1.05em;border-bottom:1px solid #2D5A27;padding-bottom:3px;margin-bottom:4px}
 .rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:#555;font-size:.92em;margin-bottom:4px}
@@ -3659,6 +3663,9 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <label>每页
     <select id="cRows"><option value="1">1 行（整页）</option><option value="2" selected>2 行（各半页）</option><option value="3">3 行</option><option value="4">4 行</option></select>
   </label>
+  <label>联数
+    <select id="cCopies"><option value="1" selected>1 联</option><option value="2">2 联（正+副）</option><option value="3">3 联（正+副+存根）</option></select>
+  </label>
   <label>纸张
     <select id="cOri"><option value="portrait" selected>A4 纵向</option><option value="landscape">A4 横向</option></select>
   </label>
@@ -3680,7 +3687,7 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <button class="ghost" id="btnEdit" title="开启后可直接点击页面上任意文字修改；改完再点一次关闭">✏️ 编辑内容</button>
   <button class="ghost" id="btnReset">⟲ 恢复默认</button>
   <button class="primary" id="btnPrint">🖨️ 打印</button>
-  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
+  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；「联数」选 2 联即同一单据正联+副联左右并排。打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
 </div>
 <div class="sheet-wrap"><div class="sheet f-normal gap-normal" id="sheet"></div></div>
 <script>
@@ -3697,7 +3704,7 @@ function readCfg(){
   function v(id){ var el = document.getElementById(id); return el ? el.value : ''; }
   function c(id){ var el = document.getElementById(id); return !!(el && el.checked); }
   return {
-    cols: v('cCols'), rows: v('cRows'), ori: v('cOri'), font: v('cFont'), gap: v('cGap'),
+    cols: v('cCols'), rows: v('cRows'), copies: v('cCopies'), ori: v('cOri'), font: v('cFont'), gap: v('cGap'),
     sign: c('cSign'), header: c('cHeader'), footer: c('cFooter'),
     note: c('cNote'), operator: c('cOperator'), photo: c('cPhoto'), brk: c('cBreak')
   };
@@ -3708,8 +3715,11 @@ function rowHtml(label, val, right){
   return '<tr><th' + cls + '>' + label + '</th><td' + cls + '>' + val + '</td></tr>';
 }
 
-function cardHtml(s){
+var COPY_LABELS = ['正联', '副联', '存根联'];
+
+function cardHtml(s, copyIdx){
   var cfg = readCfg();
+  var copies = parseInt(cfg.copies, 10) || 1;
   var rows = '';
   rows += rowHtml('收入类别', esc(s.category || '-'), false);
   rows += rowHtml('商品名称', esc(s.product_name || '-'), false);
@@ -3726,8 +3736,12 @@ function cardHtml(s){
     }).join('') + '</div>';
   }
 
+  var copyTag = '';
+  if (copies > 1){
+    copyTag = '<span class="rc-copy">' + (COPY_LABELS[copyIdx] || ('第' + (copyIdx + 1) + '联')) + '</span>';
+  }
   var head = cfg.header ? '<div class="rc-h">温州绿趣植物空间艺术科技有限公司 · 销售单</div>' : '';
-  var meta = '<div class="rc-meta">'
+  var meta = '<div class="rc-meta">' + copyTag
     + '<span>单号 #' + esc(s.id) + '</span>'
     + '<span>日期 ' + esc(s.sale_date) + '</span>'
     + '<span>客户 ' + esc(s.customer_name || '-') + '</span>'
@@ -3741,6 +3755,14 @@ function cardHtml(s){
   return '<div class="rcpt">' + head + meta
     + '<table class="rc-t">' + rows + '</table>'
     + photos + tot + sign + foot + '</div>';
+}
+
+// 一张单据 → 一个「联组」：联数 > 1 时组内左右并排正联/副联
+function groupHtml(s){
+  var copies = parseInt(readCfg().copies, 10) || 1;
+  var parts = [];
+  for (var i = 0; i < copies; i++) parts.push(cardHtml(s, i));
+  return '<div class="rcpt-group' + (copies > 1 ? ' multi' : '') + '">' + parts.join('') + '</div>';
 }
 
 var editing = false;
@@ -3764,13 +3786,18 @@ function render(){
   sheet.style.width = pageW + 'mm';
 
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
-  sheet.innerHTML = DATA.map(cardHtml).join('');
+  sheet.innerHTML = DATA.map(groupHtml).join('');
+
+  // 高度与分页挂在「联组」上：整组（正联+副联）占一行，内部各联平分宽度、撑满高度
+  var groups = sheet.querySelectorAll('.rcpt-group');
+  for (var g = 0; g < groups.length; g++){
+    // 内联 min-height 最稳：不依赖 CSS 变量与 grid 行高计算，内容多时仍可自动增高
+    groups[g].style.minHeight = cardHmm;
+    if (cfg.brk && g < groups.length - 1) groups[g].style.breakAfter = 'page';
+  }
 
   var cards = sheet.querySelectorAll('.rcpt');
   for (var i = 0; i < cards.length; i++){
-    // 内联 min-height 最稳：不依赖 CSS 变量与 grid 行高计算，内容多时仍可自动增高
-    cards[i].style.minHeight = cardHmm;
-    if (cfg.brk && i < cards.length - 1) cards[i].style.breakAfter = 'page';
     if (editing) cards[i].setAttribute('contenteditable', 'true');
   }
 }
@@ -3785,7 +3812,7 @@ function applyEditState(){
 }
 
 function bindToolbar(){
-  ['cCols','cRows','cOri','cFont','cGap','cSign','cHeader','cFooter','cNote','cOperator','cPhoto','cBreak']
+  ['cCols','cRows','cCopies','cOri','cFont','cGap','cSign','cHeader','cFooter','cNote','cOperator','cPhoto','cBreak']
     .forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.addEventListener('change', render);
@@ -3797,6 +3824,7 @@ function bindToolbar(){
   document.getElementById('btnReset').addEventListener('click', function(){
     document.getElementById('cCols').value = '1';
     document.getElementById('cRows').value = '2';
+    document.getElementById('cCopies').value = '1';
     document.getElementById('cOri').value = 'portrait';
     document.getElementById('cFont').value = 'normal';
     document.getElementById('cGap').value = 'normal';
