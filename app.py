@@ -3569,9 +3569,9 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 .toolbar button.primary{background:#2D5A27;color:#fff;border:1px solid #2D5A27}
 .toolbar button.ghost{background:#fff;border:1px solid #ccc}
 .toolbar .tb-hint{color:#999;font-size:12px}
-.sheet-wrap{padding:10mm}
-.sheet{display:grid;grid-auto-rows:minmax(var(--card-h,0mm),auto)}
-.rcpt{display:flex;flex-direction:column;height:100%;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
+.sheet-wrap{padding:10mm;display:flex;justify-content:center}
+.sheet{display:grid;grid-auto-rows:auto;width:100%;max-width:100%}
+.rcpt{display:flex;flex-direction:column;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
 .rcpt[contenteditable="true"]{outline:1px dashed #8bbf7a;background:#fcfefb}
 .rc-h{text-align:center;font-weight:700;color:#2D5A27;font-size:1.05em;border-bottom:1px solid #2D5A27;padding-bottom:3px;margin-bottom:4px}
 .rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:#555;font-size:.92em;margin-bottom:4px}
@@ -3702,19 +3702,24 @@ function render(){
   sheet.className = 'sheet f-' + cfg.font + ' gap-' + cfg.gap;
   sheet.style.gridTemplateColumns = 'repeat(' + cfg.cols + ', 1fr)';
 
-  // 每页正好排 N 行：卡片高度 =（A4 可用高 − 行间距）÷ N，表格行高自动拉伸填满
+  // 每页正好排 N 行：卡片高度 =（A4 可用高 − 行间距 − 安全余量）÷ N，表格行高自动拉伸填满
   var perRow = cfg.brk ? 1 : (parseInt(cfg.rows, 10) || 2);
   var gapMm = GAP_MM[cfg.gap] || 6;
-  var availH = (cfg.ori === 'landscape' ? 210 : 297) - 20;   // 减 @page 上下各 10mm 边距
-  var cardH = (availH - gapMm * (perRow - 1)) / perRow;
+  var pageW = (cfg.ori === 'landscape' ? 297 : 210) - 20;    // @page 左右各 10mm 边距
+  var availH = (cfg.ori === 'landscape' ? 210 : 297) - 20;   // @page 上下各 10mm 边距
+  var cardH = (availH - gapMm * (perRow - 1) - 0.8) / perRow;  // 0.8mm 安全余量，防浮点误差溢出到第二页
   if (!(cardH > 30)) cardH = 30;
-  sheet.style.setProperty('--card-h', cardH.toFixed(2) + 'mm');
+  var cardHmm = cardH.toFixed(2) + 'mm';
+  // 屏幕预览宽度锁成纸张可用宽度，做到所见即所得
+  sheet.style.width = pageW + 'mm';
 
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
   sheet.innerHTML = DATA.map(cardHtml).join('');
 
   var cards = sheet.querySelectorAll('.rcpt');
   for (var i = 0; i < cards.length; i++){
+    // 内联 min-height 最稳：不依赖 CSS 变量与 grid 行高计算，内容多时仍可自动增高
+    cards[i].style.minHeight = cardHmm;
     if (cfg.brk && i < cards.length - 1) cards[i].style.breakAfter = 'page';
     if (editing) cards[i].setAttribute('contenteditable', 'true');
   }
