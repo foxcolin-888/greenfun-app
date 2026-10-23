@@ -3570,12 +3570,12 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 .toolbar button.ghost{background:#fff;border:1px solid #ccc}
 .toolbar .tb-hint{color:#999;font-size:12px}
 .sheet-wrap{padding:10mm}
-.sheet{display:grid}
-.rcpt{border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
+.sheet{display:grid;grid-auto-rows:minmax(var(--card-h,0mm),auto)}
+.rcpt{display:flex;flex-direction:column;height:100%;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
 .rcpt[contenteditable="true"]{outline:1px dashed #8bbf7a;background:#fcfefb}
 .rc-h{text-align:center;font-weight:700;color:#2D5A27;font-size:1.05em;border-bottom:1px solid #2D5A27;padding-bottom:3px;margin-bottom:4px}
 .rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:#555;font-size:.92em;margin-bottom:4px}
-.rc-t{width:100%;border-collapse:collapse;font-size:.95em}
+.rc-t{flex:1 1 auto;width:100%;border-collapse:collapse;font-size:.95em}
 .rc-t th,.rc-t td{border:1px solid #d8d8d8;padding:2px 6px;text-align:left;word-break:break-all}
 .rc-t th{background:#f5f7f4;color:#2D5A27;font-weight:600;width:26%;white-space:nowrap}
 .rc-t td.r,.rc-t th.r{text-align:right}
@@ -3604,7 +3604,10 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <span class="tb-title">🖨️ 批量打印销售单</span>
   <span class="tb-sep"></span>
   <label>每行
-    <select id="cCols"><option value="1">1 张</option><option value="2" selected>2 张</option><option value="3">3 张</option></select>
+    <select id="cCols"><option value="1" selected>1 张</option><option value="2">2 张</option><option value="3">3 张</option></select>
+  </label>
+  <label>每页
+    <select id="cRows"><option value="1">1 行（整页）</option><option value="2" selected>2 行（各半页）</option><option value="3">3 行</option><option value="4">4 行</option></select>
   </label>
   <label>纸张
     <select id="cOri"><option value="portrait" selected>A4 纵向</option><option value="landscape">A4 横向</option></select>
@@ -3644,7 +3647,7 @@ function readCfg(){
   function v(id){ var el = document.getElementById(id); return el ? el.value : ''; }
   function c(id){ var el = document.getElementById(id); return !!(el && el.checked); }
   return {
-    cols: v('cCols'), ori: v('cOri'), font: v('cFont'), gap: v('cGap'),
+    cols: v('cCols'), rows: v('cRows'), ori: v('cOri'), font: v('cFont'), gap: v('cGap'),
     sign: c('cSign'), header: c('cHeader'), footer: c('cFooter'),
     note: c('cNote'), operator: c('cOperator'), photo: c('cPhoto'), brk: c('cBreak')
   };
@@ -3691,14 +3694,24 @@ function cardHtml(s){
 }
 
 var editing = false;
+var GAP_MM = {compact: 3, normal: 6, wide: 10};
 
 function render(){
   var cfg = readCfg();
   var sheet = document.getElementById('sheet');
   sheet.className = 'sheet f-' + cfg.font + ' gap-' + cfg.gap;
   sheet.style.gridTemplateColumns = 'repeat(' + cfg.cols + ', 1fr)';
-  sheet.innerHTML = DATA.map(cardHtml).join('');
+
+  // 每页正好排 N 行：卡片高度 =（A4 可用高 − 行间距）÷ N，表格行高自动拉伸填满
+  var perRow = cfg.brk ? 1 : (parseInt(cfg.rows, 10) || 2);
+  var gapMm = GAP_MM[cfg.gap] || 6;
+  var availH = (cfg.ori === 'landscape' ? 210 : 297) - 20;   // 减 @page 上下各 10mm 边距
+  var cardH = (availH - gapMm * (perRow - 1)) / perRow;
+  if (!(cardH > 30)) cardH = 30;
+  sheet.style.setProperty('--card-h', cardH.toFixed(2) + 'mm');
+
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
+  sheet.innerHTML = DATA.map(cardHtml).join('');
 
   var cards = sheet.querySelectorAll('.rcpt');
   for (var i = 0; i < cards.length; i++){
@@ -3717,7 +3730,7 @@ function applyEditState(){
 }
 
 function bindToolbar(){
-  ['cCols','cOri','cFont','cGap','cSign','cHeader','cFooter','cNote','cOperator','cPhoto','cBreak']
+  ['cCols','cRows','cOri','cFont','cGap','cSign','cHeader','cFooter','cNote','cOperator','cPhoto','cBreak']
     .forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.addEventListener('change', render);
@@ -3727,7 +3740,8 @@ function bindToolbar(){
     applyEditState();
   });
   document.getElementById('btnReset').addEventListener('click', function(){
-    document.getElementById('cCols').value = '2';
+    document.getElementById('cCols').value = '1';
+    document.getElementById('cRows').value = '2';
     document.getElementById('cOri').value = 'portrait';
     document.getElementById('cFont').value = 'normal';
     document.getElementById('cGap').value = 'normal';
