@@ -3630,7 +3630,7 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <button class="ghost" id="btnEdit" title="开启后可直接点击页面上任意文字修改；改完再点一次关闭">✏️ 编辑内容</button>
   <button class="ghost" id="btnReset">⟲ 恢复默认</button>
   <button class="primary" id="btnPrint">🖨️ 打印</button>
-  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印</span>
+  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
 </div>
 <div class="sheet-wrap"><div class="sheet f-normal gap-normal" id="sheet"></div></div>
 <script>
