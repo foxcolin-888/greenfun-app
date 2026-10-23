@@ -269,3 +269,29 @@ button{font-family:inherit;cursor:pointer}
 .q-del{border:0;background:transparent;color:var(--muted);font-size:17px;cursor:pointer;line-height:1}
 .q-del:hover{color:var(--red-600,#c0392b)}
 
+/* 物料准备清单 */
+.mp-overlay{position:fixed;inset:0;background:rgba(15,41,24,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:30px 14px;overflow:auto}
+.mp-modal{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:100%;max-width:960px;margin:auto}
+.mp-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--card);z-index:2}
+.mp-head h2{font-size:18px;color:var(--green-900)}
+.mp-head .mp-sub{color:var(--muted);font-size:13px}
+.mp-head .close{margin-left:auto;font-size:24px;line-height:1;border:0;background:transparent;cursor:pointer;color:var(--muted)}
+.mp-body{padding:18px 20px}
+.mp-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.mp-bar label{font-size:13px;color:var(--muted);font-weight:600}
+.mp-bar select{max-width:240px}
+.mp-cols{display:grid;grid-template-columns:1.4fr 1fr;gap:20px}
+@media(max-width:760px){.mp-cols{grid-template-columns:1fr}}
+.mp-col h3{font-size:14px;color:var(--green-800);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.mp-table{width:100%;border-collapse:collapse;font-size:13px}
+.mp-table th,.mp-table td{border:1px solid var(--border);padding:5px 6px;text-align:left}
+.mp-table th{background:var(--green-50);font-weight:600;font-size:12px}
+.mp-table input{border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:13px;outline:none}
+.mp-table input:focus{border-color:var(--green-400);box-shadow:0 0 0 2px var(--green-50)}
+.mp-tools{display:flex;flex-wrap:wrap;gap:8px;background:var(--green-50);border:1px solid var(--border);border-radius:10px;padding:12px}
+.mp-tool{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:13px;cursor:pointer;user-select:none}
+.mp-tool input{accent-color:var(--green-600)}
+.mp-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border);position:sticky;bottom:0;background:var(--card)}
+.mp-foot #mpStat{margin-right:auto}
+.wfull.sm{max-width:240px}
+

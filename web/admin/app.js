@@ -339,7 +339,7 @@ function renderDetail() {
       ${quotes.length ? `<div class="section"><h3>报价单</h3>
         <table class="mini-table"><thead><tr><th>单号</th><th>合计</th><th>状态</th><th></th></tr></thead><tbody>
         ${quotes.map(q=>`<tr><td>${esc(q.quote_no)}</td><td>¥${fmt(q.total)}</td><td><span class="status-pill ${q.status==='已批'?'st-deal':'st-lead'}">${esc(q.status)}</span></td>
-          <td><button class="btn sm ghost" data-printq="${q.id}">打印</button></td></tr>`).join('')}
+          <td><button class="btn sm ghost" data-printq="${q.id}">打印</button> <button class="btn sm ghost" data-matprep="${q.id}">📦 物料</button></td></tr>`).join('')}
         </tbody></table></div>` : ''}
 
       <div class="section">
@@ -359,6 +359,7 @@ function renderDetail() {
   $('#saveProfile').addEventListener('click', saveProfile);
   $('#gotoQuote').addEventListener('click', () => { const id = c.id; closeDrawer(); switchView('quote').then(() => { state.quote.customerId = String(id); const sel = $('#qCustomer'); if (sel) { sel.value = String(id); onQuoteCustomerChange(); } }); });
   $$('[data-printq]').forEach(b => b.addEventListener('click', () => printQuote(+b.dataset.printq)));
+  $$('[data-matprep]').forEach(b => b.addEventListener('click', () => openMaterialPrep(+b.dataset.matprep)));
   $('#delCust').addEventListener('click', async () => {
     if (!confirm('确认删除该客户及其所有阶段数据？')) return;
     const r = await api('DELETE', `/customers/${c.id}`);
@@ -707,8 +708,193 @@ async function saveQuote(thenPrint) {
   const payload = collectQuotePayload();
   const r = await api('POST', '/quotes', payload);
   if (r.error) return toast(r.error);
+  state.lastQuoteId = r.id;
   toast('报价单已保存：' + r.quote_no);
   if (thenPrint) printQuote(r.id);
+  openMaterialPrep(r.id);
+}
+
+// ---------------- 物料准备清单 ----------------
+const TOOL_PRESETS = {
+  "阳台花园/露台造景": ["修枝剪", "小锄头/铲子", "水平尺", "无纺布/保湿棉", "电钻(挂壁固定)", "安全帽"],
+  "庭院/别墅花园": ["铁锹", "修枝剪(大)", "手锯", "水平仪", "水泥/砂浆工具", "水管/水带", "劳保鞋"],
+  "室内绿植软装": ["托盘/接水盘", "花艺剪", "扎带", "气泡膜(搬运保护)", "拖把", "围裙"],
+};
+const TOOL_COMMON = ["园艺手套", "喷壶", "卷尺", "美工刀", "垃圾袋", "抹布/毛巾", "扎带/麻绳"];
+function toolPresetFor(type) {
+  const base = TOOL_COMMON.slice();
+  (TOOL_PRESETS[type] || []).forEach(t => { if (!base.includes(t)) base.push(t); });
+  return base;
+}
+let _mpState = { id: null, materials: [], tools: [], type: "", note: "", toolsDirty: false };
+async function openMaterialPrep(quoteId) {
+  _mpState = { id: quoteId, materials: [], tools: [], type: "", note: "", toolsDirty: false };
+  let overlay = document.getElementById('mpOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'mpOverlay';
+    overlay.className = 'mp-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="mp-modal">
+      <div class="mp-head">
+        <h2>📦 物料准备清单</h2>
+        <span class="mp-sub" id="mpQuoteNo"></span>
+        <button class="close" id="mpClose">×</button>
+      </div>
+      <div class="mp-body">
+        <div class="mp-bar">
+          <label>项目类型</label>
+          <select id="mpType" class="wfull sm">
+            <option value="">— 请选择 —</option>
+            <option ${_mpState.type==="阳台花园/露台造景"?'selected':''}>阳台花园/露台造景</option>
+            <option ${_mpState.type==="庭院/别墅花园"?'selected':''}>庭院/别墅花园</option>
+            <option ${_mpState.type==="室内绿植软装"?'selected':''}>室内绿植软装</option>
+          </select>
+          <label class="file-btn btn sm ghost">⬆ 上传报价单解析<input type="file" id="mpUpload" accept="image/*,.csv,.txt,.xlsx,.xls" hidden></label>
+          <span id="mpUploadHint" class="hint">支持 图片/Excel/CSV 自动识别物料</span>
+        </div>
+        <div class="mp-cols">
+          <div class="mp-col">
+            <h3>① 物料清单 <button class="btn sm ghost" id="mpAddMat">＋ 加一行</button></h3>
+            <table class="mp-table"><thead><tr><th>已备</th><th>名称</th><th>规格</th><th>数量</th><th>单位</th><th></th></tr></thead>
+              <tbody id="mpMatBody"></tbody></table>
+          </div>
+          <div class="mp-col">
+            <h3>② 基础工具（按项目选配）</h3>
+            <div id="mpTools" class="mp-tools"><div class="empty">请先选择项目类型</div></div>
+          </div>
+        </div>
+        <div class="pfield"><label>备注</label><textarea id="mpNote" class="wfull" rows="2" placeholder="如：周三上午进场，货车限高2.2m"></textarea></div>
+      </div>
+      <div class="mp-foot">
+        <span id="mpStat" class="hint"></span>
+        <button class="btn sm ghost" id="mpPrint">🖨 打印清单</button>
+        <button class="btn" id="mpSave">💾 保存</button>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+  $('#mpClose').addEventListener('click', () => overlay.style.display = 'none');
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.style.display = 'none'; });
+
+  // 加载数据
+  toast('加载物料清单...');
+  const data = await api('GET', '/quotes/' + quoteId + '/material-prep');
+  if (data.error) { toast(data.error); return; }
+  _mpState.materials = data.materials || [];
+  _mpState.tools = data.tools || [];
+  _mpState.type = data.project_type || "";
+  _mpState.note = data.note || "";
+  $('#mpQuoteNo').textContent = '单号 #' + quoteId;
+  const sel = $('#mpType');
+  sel.value = _mpState.type;
+  $('#mpNote').value = _mpState.note;
+  renderMatBody();
+  renderTools();
+
+  sel.addEventListener('change', () => {
+    _mpState.type = sel.value;
+    if (!_mpState.toolsDirty) { _mpState.tools = toolPresetFor(_mpState.type).map(n => ({ name: n, selected: false })); renderTools(); }
+  });
+  $('#mpAddMat').addEventListener('click', () => { _mpState.materials.push({ name: '', spec: '', unit: '项', qty: 1, prepared: false }); renderMatBody(); });
+  $('#mpUpload').addEventListener('change', onMpUpload);
+  $('#mpSave').addEventListener('click', () => mpSave(overlay));
+  $('#mpPrint').addEventListener('click', () => mpPrint());
+}
+function renderMatBody() {
+  const body = $('#mpMatBody'); if (!body) return;
+  if (!_mpState.materials.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无物料，点「上传报价单解析」或「加一行」</td></tr>'; return; }
+  body.innerHTML = _mpState.materials.map((m, i) => `
+    <tr data-i="${i}">
+      <td style="text-align:center"><input type="checkbox" class="mp-prep" ${m.prepared ? 'checked' : ''}></td>
+      <td><input class="mp-name wfull" value="${esc(m.name)}" placeholder="物料名称"></td>
+      <td><input class="mp-spec wfull" value="${esc(m.spec)}" placeholder="规格"></td>
+      <td><input class="mp-qty" type="number" min="0" style="width:64px" value="${m.qty}"></td>
+      <td><input class="mp-unit" style="width:54px" value="${esc(m.unit)}"></td>
+      <td><button class="btn sm ghost mp-del">×</button></td>
+    </tr>`).join('');
+  $$('#mpMatBody .mp-del').forEach(b => b.addEventListener('click', () => { _mpState.materials.splice(+b.closest('tr').dataset.i, 1); renderMatBody(); }));
+}
+function renderTools() {
+  const box = $('#mpTools'); if (!box) return;
+  const preset = (_mpState.tools && _mpState.tools.length) ? _mpState.tools : toolPresetFor(_mpState.type).map(n => ({ name: n, selected: false }));
+  if (!preset.length) { box.innerHTML = '<div class="empty">请先选择项目类型</div>'; return; }
+  box.innerHTML = preset.map((t, i) => `
+    <label class="mp-tool"><input type="checkbox" data-i="${i}" ${t.selected ? 'checked' : ''}> ${esc(t.name)}</label>`).join('');
+  $$('#mpTools input').forEach(c => c.addEventListener('change', () => { _mpState.toolsDirty = true; _mpState.tools[+c.dataset.i].selected = c.checked; }));
+}
+async function onMpUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const isImg = file.type.startsWith('image/');
+  const isExcel = /\.xlsx?$/i.test(file.name);
+  $('#mpUploadHint').textContent = '解析中...';
+  try {
+    let payload = { filename: file.name };
+    if (isImg || isExcel) {
+      const b64 = await readFileAsDataURL(file);
+      if (isImg) payload.file = b64; else payload.file = b64.split(',')[1];
+    } else {
+      payload.text = await file.text();
+    }
+    const r = await api('POST', '/material-prep/parse', payload);
+    if (r.error) { toast(r.error); $('#mpUploadHint').textContent = '支持 图片/Excel/CSV 自动识别物料'; return; }
+    _mpState.materials = r.materials || [];
+    _mpState.type = ""; $('#mpType').value = "";
+    renderMatBody();
+    $('#mpUploadHint').textContent = '已解析 ' + (_mpState.materials.length) + ' 项物料';
+    toast('已解析 ' + _mpState.materials.length + ' 项物料');
+  } catch (err) {
+    toast('解析失败：' + (err && err.message ? err.message : String(err)));
+    $('#mpUploadHint').textContent = '支持 图片/Excel/CSV 自动识别物料';
+  }
+}
+function mpCollect() {
+  const mats = $$('#mpMatBody tr[data-i]').map(tr => ({
+    name: tr.querySelector('.mp-name').value.trim(),
+    spec: tr.querySelector('.mp-spec').value.trim(),
+    qty: num(tr.querySelector('.mp-qty').value),
+    unit: tr.querySelector('.mp-unit').value.trim() || '项',
+    prepared: tr.querySelector('.mp-prep').checked,
+  })).filter(m => m.name);
+  const tools = (_mpState.tools || []).map((t, i) => {
+    const cb = document.querySelector(`#mpTools input[data-i="${i}"]`);
+    return { name: t.name, selected: cb ? cb.checked : t.selected };
+  });
+  return { project_type: $('#mpType').value, note: $('#mpNote').value, materials: mats, tools };
+}
+async function mpSave(overlay) {
+  const body = mpCollect();
+  const r = await api('PUT', '/quotes/' + _mpState.id + '/material-prep', body);
+  if (r.error) return toast(r.error);
+  toast('物料准备清单已保存');
+}
+function mpPrint() {
+  const body = mpCollect();
+  const prepared = body.materials.filter(m => m.prepared).length;
+  const rows = body.materials.map(m => `<tr><td style="text-align:center">${m.prepared ? '✔' : '☐'}</td><td>${esc(m.name)}</td><td>${esc(m.spec)}</td><td>${m.qty}</td><td>${esc(m.unit)}</td></tr>`).join('') || '<tr><td colspan="5">（无）</td></tr>';
+  const tools = body.tools.filter(t => t.selected).map(t => esc(t.name)).join('、') || '（未选配）';
+  const w = window.open('', '_blank');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>物料准备清单</title>
+  <style>body{font-family:-apple-system,"Microsoft YaHei",sans-serif;padding:30px;color:#222}
+  h1{font-size:20px;border-bottom:2px solid #2e7d4f;padding-bottom:8px}
+  .meta{color:#666;margin:8px 0 18px;font-size:13px}
+  h3{font-size:15px;margin:18px 0 8px;color:#2e7d4f}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+  th{background:#f4f7f2}
+  .tools{background:#fafafa;padding:10px;border-radius:6px;font-size:14px}
+  .foot{margin-top:24px;color:#999;font-size:12px}</style></head>
+  <body><h1>📦 物料准备清单</h1>
+  <div class="meta">报价单号 #${_mpState.id} ｜ 项目类型：${esc(body.project_type || '未指定')} ｜ 物料已备 ${prepared}/${body.materials.length} ｜ 生成时间：${new Date().toLocaleString('zh-CN')}</div>
+  <h3>① 物料清单</h3>
+  <table><thead><tr><th style="width:48px">已备</th><th>名称</th><th>规格</th><th>数量</th><th>单位</th></tr></thead><tbody>${rows}</tbody></table>
+  <h3>② 基础工具（进场携带）</h3>
+  <div class="tools">${tools}</div>
+  ${body.note ? `<h3>备注</h3><p>${esc(body.note)}</p>` : ''}
+  <div class="foot">绿趣植物空间艺术 · 进场施工前物料核对单</div>
+  <script>window.onload=()=>{window.print();}</script></body></html>`);
+  w.document.close();
 }
 function printQuote(id) {
   window.open(`${API}/quotes/${id}/print?token=${encodeURIComponent(state.token)}`, '_blank');
@@ -2094,6 +2280,7 @@ async function renderSales() {
       <select id="sfCategory"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm" id="sfSearch">🔍 查询</button>
       <button class="btn sm primary" id="sfAdd">+ 登记销售</button>
+      <button class="btn sm ghost" id="sfBatchPrint" title="勾选多张单子，可在一张纸上打印并调整排版">🖨️ 批量打印</button>
       <select id="sfSummaryCat" style="width:130px"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm amber" id="sfWeekly">📊 本周汇总</button>
       <button class="btn sm amber" id="sfMonthly">📅 本月汇总</button>
@@ -2112,6 +2299,17 @@ async function renderSales() {
   $('#sfWeekly').addEventListener('click', loadWeeklySummary);
   $('#sfMonthly').addEventListener('click', loadMonthlySummary);
   $('#sfCustomer').addEventListener('keydown', e => { if (e.key === 'Enter') loadSalesList(); });
+
+  // 批量打印：勾选多张单子 → 一张纸打印多张
+  $('#sfBatchPrint').addEventListener('click', batchPrintSales);
+  // 列表每次重绘都换 DOM，勾选事件用委托挂在容器上（容器本身不重建）
+  $('#salesList').addEventListener('change', e => {
+    if (e.target && e.target.id === 'salesSelAll') {
+      const on = e.target.checked;
+      document.querySelectorAll('.sales-sel').forEach(c => { c.checked = on; });
+    }
+    updateSalesSelCount();
+  });
 
   await loadSalesList();
 }
@@ -2132,16 +2330,16 @@ async function loadSalesList() {
   }
 
   // 按日期分组
-  let html = '<table class="sales-table"><thead><tr><th width="90">日期</th><th width="110">收入类别</th><th>商品名</th><th width="60">图片</th><th width="130">价格/折扣</th><th width="80">充值</th><th width="85">销售收入</th><th width="100">收款方式</th><th width="120">客户</th><th width="120">操作</th></tr></thead><tbody>';
+  let html = '<table class="sales-table"><thead><tr><th width="34"><input type="checkbox" id="salesSelAll" title="全选/取消全选"></th><th width="90">日期</th><th width="110">收入类别</th><th>商品名</th><th width="60">图片</th><th width="130">价格/折扣</th><th width="80">充值</th><th width="85">销售收入</th><th width="100">收款方式</th><th width="120">客户</th><th width="120">操作</th></tr></thead><tbody>';
   let lastDate = '';
   let totalSales = 0, totalRecharge = 0;
 
   for (const s of list) {
     const dateLabel = s.sale_date !== lastDate ? esc(s.sale_date) : '';
     if (dateLabel) {
-      if (lastDate) html += `<tr><td colspan="10" style="background:#f9f9f9;font-size:11px;color:#999;text-align:right;padding:2px 10px">小计：销售￥${totalSales.toFixed(2)} / 充值￥${totalRecharge.toFixed(2)}</td></tr>`;
+      if (lastDate) html += `<tr><td colspan="11" style="background:#f9f9f9;font-size:11px;color:#999;text-align:right;padding:2px 10px">小计：销售￥${totalSales.toFixed(2)} / 充值￥${totalRecharge.toFixed(2)}</td></tr>`;
       totalSales = 0; totalRecharge = 0;
-      html += `<tr class="sales-date-group"><td colspan="10">📅 ${dateLabel}</td></tr>`;
+      html += `<tr class="sales-date-group"><td colspan="11">📅 ${dateLabel}</td></tr>`;
       lastDate = s.sale_date;
     }
     const sa = parseFloat(s.sales_amount) || 0;
@@ -2150,6 +2348,7 @@ async function loadSalesList() {
     totalRecharge += ra;
 
     html += `<tr>
+      <td><input type="checkbox" class="sales-sel" value="${s.id}"></td>
       <td>${dateLabel ? '' : ''}</td>
       <td>${esc(s.category)}</td>
       <td style="font-weight:500">${esc(s.product_name || '-')}</td>
@@ -2166,10 +2365,33 @@ async function loadSalesList() {
       </td>
     </tr>`;
   }
-  html += `<tr><td colspan="10" style="background:#e8f0e4;font-size:12px;text-align:right;padding:4px 10px;font-weight:bold;color:var(--green-800)">
+  html += `<tr><td colspan="11" style="background:#e8f0e4;font-size:12px;text-align:right;padding:4px 10px;font-weight:bold;color:var(--green-800)">
     合计：销售￥${totalSales.toFixed(2)} · 充值￥${totalRecharge.toFixed(2)}
   </td></tr></tbody></table>`;
   container.innerHTML = html;
+  updateSalesSelCount();
+}
+
+function salesSelectedIds() {
+  return Array.from(document.querySelectorAll('.sales-sel:checked')).map(c => c.value);
+}
+
+function updateSalesSelCount() {
+  const n = salesSelectedIds().length;
+  const btn = document.getElementById('sfBatchPrint');
+  if (btn) btn.textContent = n ? '🖨️ 批量打印 (' + n + ')' : '🖨️ 批量打印';
+  const all = document.getElementById('salesSelAll');
+  if (all) {
+    const total = document.querySelectorAll('.sales-sel').length;
+    all.checked = total > 0 && n === total;
+  }
+}
+
+function batchPrintSales() {
+  const ids = salesSelectedIds();
+  if (!ids.length) { alert('请先在列表左侧勾选要打印的单子（可多选）'); return; }
+  // 直接开新窗口，不经过 api()，所以这里必须带完整的 /api 前缀
+  window.open(`${API}/sales/print-batch?ids=${ids.join(',')}&token=${encodeURIComponent(state.token)}`, '_blank');
 }
 
 function openSalesForm(record) {

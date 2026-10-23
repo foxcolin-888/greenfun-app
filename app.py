@@ -905,6 +905,18 @@ def _migrate_schema(conn):
         note TEXT,
         created_at TEXT
     )""")
+    # 物料准备清单（报价单 -> 进场施工前核对）
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS material_prep (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quote_id INTEGER UNIQUE,
+        project_type TEXT DEFAULT '',
+        materials TEXT DEFAULT '[]',
+        tools TEXT DEFAULT '[]',
+        note TEXT DEFAULT '',
+        created_at TEXT,
+        updated_at TEXT
+    )""")
     conn.commit()
 
 
@@ -1413,6 +1425,9 @@ class Handler(BaseHTTPRequestHandler):
         # 方案设计打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
         if path.startswith("/api/schemes/") and path.endswith("/print"):
             return self._scheme_print(path)
+        # 门店销售单「批量打印」页（多张一页、排版可调）——必须排在 /api/sales/<id>/print 之前
+        if path == "/api/sales/print-batch":
+            return self._sales_print_batch(path)
         # 门店销售单打印页（内嵌 token 校验，用查询参数携带 token 以便新窗口打开）
         if path.startswith("/api/sales/") and path.endswith("/print"):
             return self._sales_print(path)
@@ -1658,6 +1673,15 @@ class Handler(BaseHTTPRequestHandler):
                 if u["role"] not in ("admin", "manager"):
                     return self._json({"error": "仅店长/管理员可审批"}, 403)
                 return self._json(self._quote_status(int(parts[3]), body, u))
+            if len(parts) == 5 and parts[3].isdigit() and parts[4] == "material-prep":
+                if method == "GET":
+                    return self._json(self._material_prep_get(int(parts[3])))
+                if method == "PUT":
+                    return self._json(self._material_prep_save(int(parts[3]), body))
+
+        # 物料准备清单：上传报价单/图片自动解析物料
+        if path == "/api/material-prep/parse" and method == "POST":
+            return self._json(self._material_prep_parse(body))
 
         # 方案设计（设计师/店长/管理员均可）
         if path == "/api/scheme/upload" and method == "POST":
@@ -2258,6 +2282,150 @@ class Handler(BaseHTTPRequestHandler):
         conn.commit()
         conn.close()
         return {"ok": True}
+
+    # ---- 物料准备清单 ----
+    def _tool_presets(self, project_type):
+        """按项目类型返回推荐的基础工具清单（全部可勾选）"""
+        common = ["园艺手套", "喷壶", "卷尺", "美工刀", "垃圾袋", "抹布/毛巾", "扎带/麻绳"]
+        presets = {
+            "阳台花园/露台造景": ["修枝剪", "小锄头/铲子", "水平尺", "无纺布/保湿棉", "电钻(挂壁固定)", "安全帽"],
+            "庭院/别墅花园": ["铁锹", "修枝剪(大)", "手锯", "水平仪", "水泥/砂浆工具", "水管/水带", "劳保鞋"],
+            "室内绿植软装": ["托盘/接水盘", "花艺剪", "扎带", "气泡膜(搬运保护)", "拖把", "围裙"],
+        }
+        tools = common + presets.get(project_type, [])
+        seen = set(); out = []
+        for t in tools:
+            if t not in seen:
+                seen.add(t); out.append(t)
+        return out
+
+    def _material_prep_get(self, qid):
+        conn = get_db()
+        r = conn.execute("SELECT * FROM material_prep WHERE quote_id=?", (qid,)).fetchone()
+        if r:
+            d = dict(r)
+            conn.close()
+            try: d["materials"] = json.loads(d["materials"] or "[]")
+            except Exception: d["materials"] = []
+            try: d["tools"] = json.loads(d["tools"] or "[]")
+            except Exception: d["tools"] = []
+            return d
+        q = conn.execute("SELECT * FROM quotes WHERE id=?", (qid,)).fetchone()
+        if not q:
+            conn.close()
+            return {"error": "报价单不存在"}
+        items = []
+        try:
+            items = json.loads(q["items"] or "[]")
+        except Exception:
+            items = []
+        materials = [{
+            "name": it.get("name", ""), "spec": it.get("spec", ""),
+            "unit": it.get("unit", "项"), "qty": it.get("qty", 1), "prepared": False,
+        } for it in items]
+        conn.close()
+        return {"quote_id": qid, "project_type": "", "materials": materials, "tools": [], "note": ""}
+
+    def _material_prep_save(self, qid, body):
+        t = now_str()
+        conn = get_db()
+        r = conn.execute("SELECT id FROM material_prep WHERE quote_id=?", (qid,)).fetchone()
+        materials = body.get("materials", [])
+        tools = body.get("tools", [])
+        if isinstance(materials, list): materials = json.dumps(materials, ensure_ascii=False)
+        if isinstance(tools, list): tools = json.dumps(tools, ensure_ascii=False)
+        pt = body.get("project_type", ""); note = body.get("note", "")
+        if r:
+            conn.execute("UPDATE material_prep SET project_type=?, materials=?, tools=?, note=?, updated_at=? WHERE quote_id=?",
+                         (pt, materials, tools, note, t, qid))
+        else:
+            conn.execute("INSERT INTO material_prep (quote_id, project_type, materials, tools, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                         (qid, pt, materials, tools, note, t, t))
+        conn.commit(); conn.close()
+        return {"ok": True}
+
+    def _parse_text_materials(self, text):
+        out = []
+        if not text: return out
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"): continue
+            if line.replace("|", "").replace(" ", "") in ("名称规格数量单价", "序号名称规格数量单价", "名称规格数量单位"): continue
+            parts = [p for p in re.split(r"[\t,，;；|]+|\s{2,}", line) if p.strip()]
+            if len(parts) == 1: parts = line.split()
+            if not parts: continue
+            if len(parts) > 1 and is_num(parts[0]) and float(parts[0]) < 1000 and float(parts[0]) == int(float(parts[0])) and any(not is_num(x) for x in parts[1:]):
+                parts = parts[1:]
+            name = parts[0]; rest = parts[1:]
+            nums = [x for x in rest if is_num(x)]; texts = [x for x in rest if not is_num(x)]
+            qty = float(nums[0]) if nums else 1.0
+            spec = texts[0] if texts else ""
+            unit = texts[1] if len(texts) > 1 else "项"
+            out.append({"name": name, "spec": spec, "unit": unit, "qty": qty, "prepared": False})
+        return out
+
+    def _material_prep_parse(self, body):
+        import base64 as _b64, io as _io, zipfile as _zf
+        file_data = (body.get("file") or "").strip()
+        filename = (body.get("filename") or "").lower()
+        if file_data.startswith("data:"):
+            mime = file_data.split(";")[0].split(":")[1]
+            if mime.startswith("image/"):
+                s = get_settings()
+                api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
+                base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
+                model = (body.get("model") or s.get("img_analysis_model") or s.get("img_gen_model") or "").strip()
+                if "gemini" in model and model.endswith("-image"):
+                    model = model[:-len("-image")]
+                if not api_key:
+                    return {"error": "请先在「系统设置 → 生图模型」配置平台级 API Key（Gemini 等）后再上传图片解析"}
+                try:
+                    text = self._analyze_image(file_data, "items", api_key, base_url, model)
+                except Exception as e:
+                    return {"error": "AI 解析失败：" + str(e)}
+                raw = text.strip()
+                raw = re.sub(r"^```(?:json)?", "", raw); raw = re.sub(r"```$", "", raw)
+                try:
+                    arr = json.loads(raw)
+                except Exception:
+                    return {"error": "AI 返回内容无法解析为物料清单：\n" + raw[:500]}
+                items = [{
+                    "name": str(it.get("name", "")).strip(),
+                    "spec": str(it.get("spec", "")).strip(),
+                    "unit": str(it.get("unit", "项")).strip() or "项",
+                    "qty": float(it.get("qty") or 1) if is_num(str(it.get("qty"))) else 1,
+                    "prepared": False,
+                } for it in arr]
+                return {"materials": items}
+            return {"error": "不支持的文件类型（请上传图片、CSV/TXT 或 Excel）"}
+        # 文本 / CSV / Excel
+        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+            try:
+                raw = _b64.b64decode(file_data)
+                z = _zf.ZipFile(_io.BytesIO(raw))
+                strings = []
+                if "xl/sharedStrings.xml" in z.namelist():
+                    sx = z.read("xl/sharedStrings.xml").decode("utf-8", "ignore")
+                    strings = re.findall(r"<t[^>]*>(.*?)</t>", sx, re.S)
+                sx = z.read("xl/worksheets/sheet1.xml").decode("utf-8", "ignore")
+                rows = re.findall(r"<row[^>]*>(.*?)</row>", sx, re.S)
+                lines = []
+                for row in rows:
+                    cells = re.findall(r"<c[^>]*>(?:<f[^>]*>.*?</f>)?<v>(.*?)</v>", row, re.S)
+                    vals = []
+                    for c in cells:
+                        v = re.sub(r"<[^>]+>", "", c)
+                        if v.isdigit() and strings and int(v) < len(strings):
+                            vals.append(strings[int(v)])
+                        else:
+                            vals.append(v)
+                    lines.append(" ".join(vals))
+                return {"materials": self._parse_text_materials("\n".join(lines))}
+            except Exception as e:
+                return {"error": "Excel 解析失败：" + str(e)}
+        # 纯文本 / CSV
+        text = (body.get("text") or "").strip() or file_data
+        return {"materials": self._parse_text_materials(text)}
 
     # ---- 方案设计 ----
     def _he(self, s):
@@ -2988,6 +3156,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, "not found")
         return self._send(200, render_quote_html(d), "text/html; charset=utf-8")
 
+    def _sales_print_batch(self, path):
+        """销售单批量打印页：?ids=1,2,3&token=xxx，一张纸可排多张，排版可在页面调整"""
+        parts = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parts.query)
+        token = qs.get("token", [""])[0]
+        sess = SESSIONS.get(token)
+        if not sess or sess["exp"] < datetime.datetime.now().timestamp():
+            return self._send(401, "<h3 style='font-family:sans-serif'>会话已过期，请回系统重新打开批量打印</h3>",
+                              "text/html; charset=utf-8")
+        ids = []
+        for p in (qs.get("ids", [""])[0] or "").split(","):
+            p = p.strip()
+            if p.isdigit():
+                ids.append(int(p))
+        if not ids:
+            return self._send(400, "<h3 style='font-family:sans-serif'>未选择任何单子</h3>",
+                              "text/html; charset=utf-8")
+        html = _sales_print_batch_html(ids)
+        return self._send(200, html, "text/html; charset=utf-8")
+
     def _sales_print(self, path):
         """销售单打印页；token 通过查询参数 ?token= 传入"""
         parts = urllib.parse.urlparse(self.path)
@@ -3365,6 +3553,232 @@ def _sales_delete(sid):
     conn.commit()
     conn.close()
     return {"ok": True}
+
+
+SALES_BATCH_PRINT_TEMPLATE = """<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<title>销售单批量打印</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0;background:#f3f4f2}
+.toolbar{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #ddd;padding:8px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px}
+.toolbar label{display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
+.toolbar select,.toolbar button{font-size:13px;padding:3px 8px;border-radius:4px}
+.toolbar .tb-title{font-weight:600;color:#2D5A27}
+.toolbar .tb-sep{width:1px;height:20px;background:#e2e2e2}
+.toolbar button.primary{background:#2D5A27;color:#fff;border:1px solid #2D5A27}
+.toolbar button.ghost{background:#fff;border:1px solid #ccc}
+.toolbar .tb-hint{color:#999;font-size:12px}
+.sheet-wrap{padding:10mm}
+.sheet{display:grid}
+.rcpt{border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
+.rcpt[contenteditable="true"]{outline:1px dashed #8bbf7a;background:#fcfefb}
+.rc-h{text-align:center;font-weight:700;color:#2D5A27;font-size:1.05em;border-bottom:1px solid #2D5A27;padding-bottom:3px;margin-bottom:4px}
+.rc-meta{display:flex;flex-wrap:wrap;gap:2px 14px;color:#555;font-size:.92em;margin-bottom:4px}
+.rc-t{width:100%;border-collapse:collapse;font-size:.95em}
+.rc-t th,.rc-t td{border:1px solid #d8d8d8;padding:2px 6px;text-align:left;word-break:break-all}
+.rc-t th{background:#f5f7f4;color:#2D5A27;font-weight:600;width:26%;white-space:nowrap}
+.rc-t td.r,.rc-t th.r{text-align:right}
+.rc-photos{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.rc-photos img{max-height:70px;border-radius:3px}
+.rc-tot{text-align:right;font-weight:700;color:#1f4a1c;margin-top:4px;font-size:1.02em}
+.rc-sign{display:flex;justify-content:space-between;color:#555;font-size:.9em;margin-top:10px}
+.rc-foot{text-align:center;color:#aaa;font-size:.8em;border-top:1px solid #eee;margin-top:6px;padding-top:3px}
+.sheet.f-compact{font-size:10.5px}
+.sheet.f-normal{font-size:12px}
+.sheet.f-large{font-size:13.5px}
+.gap-compact{gap:3mm}
+.gap-normal{gap:6mm}
+.gap-wide{gap:10mm}
+@media print{
+  body{background:#fff}
+  .toolbar{display:none!important}
+  .sheet-wrap{padding:0}
+  .rcpt{border:1px solid #999}
+  .rcpt[contenteditable]{outline:none;background:#fff}
+}
+</style>
+<style id="pageStyle">@page{size:A4 portrait;margin:10mm}</style>
+</head><body>
+<div class="toolbar no-print">
+  <span class="tb-title">🖨️ 批量打印销售单</span>
+  <span class="tb-sep"></span>
+  <label>每行
+    <select id="cCols"><option value="1">1 张</option><option value="2" selected>2 张</option><option value="3">3 张</option></select>
+  </label>
+  <label>纸张
+    <select id="cOri"><option value="portrait" selected>A4 纵向</option><option value="landscape">A4 横向</option></select>
+  </label>
+  <label>字号
+    <select id="cFont"><option value="compact">紧凑</option><option value="normal" selected>标准</option><option value="large">大</option></select>
+  </label>
+  <label>间距
+    <select id="cGap"><option value="compact">紧</option><option value="normal" selected>中</option><option value="wide">宽</option></select>
+  </label>
+  <span class="tb-sep"></span>
+  <label><input type="checkbox" id="cSign" checked>签字栏</label>
+  <label><input type="checkbox" id="cHeader" checked>公司抬头</label>
+  <label><input type="checkbox" id="cFooter" checked>页脚</label>
+  <label><input type="checkbox" id="cNote" checked>备注</label>
+  <label><input type="checkbox" id="cOperator" checked>操作员</label>
+  <label><input type="checkbox" id="cPhoto">商品图片</label>
+  <label><input type="checkbox" id="cBreak">每单分页</label>
+  <span class="tb-sep"></span>
+  <button class="ghost" id="btnEdit" title="开启后可直接点击页面上任意文字修改；改完再点一次关闭">✏️ 编辑内容</button>
+  <button class="ghost" id="btnReset">⟲ 恢复默认</button>
+  <button class="primary" id="btnPrint">🖨️ 打印</button>
+  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印</span>
+</div>
+<div class="sheet-wrap"><div class="sheet f-normal gap-normal" id="sheet"></div></div>
+<script>
+var DATA = __SALES_DATA__;
+
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+  });
+}
+function money(n){ return '¥' + (Number(n) || 0).toFixed(2); }
+
+function readCfg(){
+  function v(id){ var el = document.getElementById(id); return el ? el.value : ''; }
+  function c(id){ var el = document.getElementById(id); return !!(el && el.checked); }
+  return {
+    cols: v('cCols'), ori: v('cOri'), font: v('cFont'), gap: v('cGap'),
+    sign: c('cSign'), header: c('cHeader'), footer: c('cFooter'),
+    note: c('cNote'), operator: c('cOperator'), photo: c('cPhoto'), brk: c('cBreak')
+  };
+}
+
+function rowHtml(label, val, right){
+  var cls = right ? ' class="r"' : '';
+  return '<tr><th' + cls + '>' + label + '</th><td' + cls + '>' + val + '</td></tr>';
+}
+
+function cardHtml(s){
+  var cfg = readCfg();
+  var rows = '';
+  rows += rowHtml('收入类别', esc(s.category || '-'), false);
+  rows += rowHtml('商品名称', esc(s.product_name || '-'), false);
+  rows += rowHtml('价格/折扣', esc(s.price_note || '-'), false);
+  if ((Number(s.recharge_amount) || 0) > 0) rows += rowHtml('充值金额', money(s.recharge_amount), true);
+  rows += rowHtml('销售收入', money(s.sales_amount), true);
+  rows += rowHtml('收款方式', esc(s.payment_method || '-'), false);
+  if (cfg.note && s.note) rows += rowHtml('备注', esc(s.note), false);
+
+  var photos = '';
+  if (cfg.photo && Array.isArray(s.photo_urls) && s.photo_urls.length){
+    photos = '<div class="rc-photos">' + s.photo_urls.map(function(u){
+      return '<img src="' + esc(u) + '">';
+    }).join('') + '</div>';
+  }
+
+  var head = cfg.header ? '<div class="rc-h">温州绿趣植物空间艺术科技有限公司 · 销售单</div>' : '';
+  var meta = '<div class="rc-meta">'
+    + '<span>单号 #' + esc(s.id) + '</span>'
+    + '<span>日期 ' + esc(s.sale_date) + '</span>'
+    + '<span>客户 ' + esc(s.customer_name || '-') + '</span>'
+    + (cfg.operator ? '<span>操作员 ' + esc(s.created_by || '-') + '</span>' : '')
+    + '</div>';
+  var total = (Number(s.sales_amount) || 0) + (Number(s.recharge_amount) || 0);
+  var tot = '<div class="rc-tot">合计：' + money(total) + '</div>';
+  var sign = cfg.sign ? '<div class="rc-sign"><span>客户签字：______________</span><span>日期：__________</span></div>' : '';
+  var foot = cfg.footer ? '<div class="rc-foot">温州绿趣植物空间艺术科技有限公司 · 鹿城区六虹桥路991号 · 0577-88868293</div>' : '';
+
+  return '<div class="rcpt">' + head + meta
+    + '<table class="rc-t">' + rows + '</table>'
+    + photos + tot + sign + foot + '</div>';
+}
+
+var editing = false;
+
+function render(){
+  var cfg = readCfg();
+  var sheet = document.getElementById('sheet');
+  sheet.className = 'sheet f-' + cfg.font + ' gap-' + cfg.gap;
+  sheet.style.gridTemplateColumns = 'repeat(' + cfg.cols + ', 1fr)';
+  sheet.innerHTML = DATA.map(cardHtml).join('');
+  document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
+
+  var cards = sheet.querySelectorAll('.rcpt');
+  for (var i = 0; i < cards.length; i++){
+    if (cfg.brk && i < cards.length - 1) cards[i].style.breakAfter = 'page';
+    if (editing) cards[i].setAttribute('contenteditable', 'true');
+  }
+}
+
+function applyEditState(){
+  var cards = document.querySelectorAll('.rcpt');
+  for (var i = 0; i < cards.length; i++){
+    if (editing) cards[i].setAttribute('contenteditable', 'true');
+    else cards[i].removeAttribute('contenteditable');
+  }
+  document.getElementById('btnEdit').textContent = editing ? '✅ 完成编辑' : '✏️ 编辑内容';
+}
+
+function bindToolbar(){
+  ['cCols','cOri','cFont','cGap','cSign','cHeader','cFooter','cNote','cOperator','cPhoto','cBreak']
+    .forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', render);
+    });
+  document.getElementById('btnEdit').addEventListener('click', function(){
+    editing = !editing;
+    applyEditState();
+  });
+  document.getElementById('btnReset').addEventListener('click', function(){
+    document.getElementById('cCols').value = '2';
+    document.getElementById('cOri').value = 'portrait';
+    document.getElementById('cFont').value = 'normal';
+    document.getElementById('cGap').value = 'normal';
+    document.getElementById('cSign').checked = true;
+    document.getElementById('cHeader').checked = true;
+    document.getElementById('cFooter').checked = true;
+    document.getElementById('cNote').checked = true;
+    document.getElementById('cOperator').checked = true;
+    document.getElementById('cPhoto').checked = false;
+    document.getElementById('cBreak').checked = false;
+    editing = false;
+    render();
+    applyEditState();
+  });
+  document.getElementById('btnPrint').addEventListener('click', function(){
+    window.print();
+  });
+}
+
+bindToolbar();
+render();
+</script>
+</body></html>"""
+
+
+def _sales_print_batch_html(ids):
+    """把多张销售单渲染成一个可调排版、可编辑的打印页"""
+    items = []
+    for sid in ids:
+        s = _sales_get(sid)
+        if not s:
+            continue
+        items.append({
+            "id": s.get("id"),
+            "sale_date": s.get("sale_date") or "",
+            "category": s.get("category") or "",
+            "product_name": s.get("product_name") or "",
+            "price_note": s.get("price_note") or "",
+            "recharge_amount": float(s.get("recharge_amount") or 0),
+            "sales_amount": float(s.get("sales_amount") or 0),
+            "payment_method": s.get("payment_method") or "",
+            "customer_name": s.get("customer_name") or "",
+            "note": s.get("note") or "",
+            "created_by": s.get("created_by") or "",
+            "photo_urls": s.get("photo_urls") or [],
+        })
+    if not items:
+        return ("<h3 style='font-family:sans-serif'>未找到可打印的销售单，请回系统重新勾选</h3>")
+    # 防止 JSON 中的 </script> 提前关闭脚本块
+    data_json = json.dumps(items, ensure_ascii=False).replace("</", "<\\/")
+    return SALES_BATCH_PRINT_TEMPLATE.replace("__SALES_DATA__", data_json)
 
 
 def _sales_receipt_html(sid):
