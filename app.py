@@ -1690,6 +1690,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._scheme_generate(body, u))
         if path == "/api/scheme/analyze" and method == "POST":
             return self._json(self._scheme_analyze(body, u))
+        # 生图引擎连通性自测（管理员在系统设置页点击「测试生图连接」触发）
+        if path == "/api/settings/test-image-gen" and method == "POST":
+            return self._json(self._img_gen_test(body, u))
         if path == "/api/schemes" and method == "POST":
             return self._json(self._create_scheme(body, u), 201)
         if path.startswith("/api/schemes/"):
@@ -2572,6 +2575,53 @@ class Handler(BaseHTTPRequestHandler):
             return {"error": "生图失败：未获取到图片，请检查 API Key / 网络 / 模型名"}
         return {"urls": urls, "url": urls[0], "provider": provider, "model": model,
                 "size": size, "quality": quality, "cost": cost}
+
+    def _img_gen_test(self, body, u):
+        """生图引擎连通性自测：用系统设置的最小生图验证服务端能否连上所选引擎。
+
+        不扣积分、不落库；生成的临时小图测完即删。失败返回明确错误，便于定位是
+        网络 / Key / 模型名 哪一处问题（避免「点了没反应」无从排查）。
+        """
+        import time
+        s = get_settings()
+        provider = (body.get("provider") or s.get("img_gen_provider") or "pollinations").strip() or "pollinations"
+        model = (body.get("model") or s.get("img_gen_model") or "").strip()
+        base_url = (body.get("base_url") or s.get("img_gen_base_url") or "").strip()
+        api_key = (body.get("api_key") or s.get("img_gen_api_key") or "").strip()
+        if provider in ("openai", "hf") and not api_key:
+            return {"error": "未配置平台级 API Key（请在系统设置→生图模型 API 接口填写后重试）"}
+        # 测试用小尺寸，省时省钱；Seedream / Pollinations 均支持 1024x1024
+        size = "1024x1024"
+        prompt = "a small potted green plant on a white background, minimalist product photo, test image"
+        cfg = {"provider": provider, "model": model, "base_url": base_url,
+               "api_key": api_key, "size": size, "quality": "standard", "watermark": "0", "reference_image": ""}
+        try:
+            w, h = size.lower().split("x")
+            w, h = int(w), int(h)
+        except Exception:
+            w, h = 1024, 1024
+        t0 = time.time()
+        try:
+            if provider == "pollinations":
+                urls = self._gen_pollinations(prompt, w, h, 1, cfg)
+            elif provider == "hf":
+                urls = self._gen_hf(prompt, w, h, 1, cfg)
+            else:
+                urls = self._gen_openai(s, prompt, w, h, 1, cfg)
+        except Exception as e:
+            return {"error": "连通测试失败：" + str(e)}
+        # 测试产生的临时图片直接删除，不打扰用户数据
+        for uu in (urls or []):
+            try:
+                p = os.path.join(UPLOAD_DIR, uu.split("/uploads/", 1)[1])
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        dt = int(round((time.time() - t0) * 1000))
+        return {"ok": True, "provider": provider,
+                "model": model or ("flux" if provider == "pollinations" else "(系统设置)"),
+                "latency_ms": dt, "count": len(urls or [])}
 
     def _scheme_analyze(self, body, u):
         image_url = (body.get("image_url") or "").strip()

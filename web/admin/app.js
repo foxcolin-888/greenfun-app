@@ -40,6 +40,7 @@ const IMG_MODELS = [
   { id: 'pollinations-flux', name: 'Pollinations Flux（免费免 Key）', provider: 'pollinations', model: 'flux', base_url: '', credit: 0, quality: 'standard', desc: '免费免 Key，速度中等，适合快速出图' },
   { id: 'pollinations-turbo', name: 'Pollinations Turbo（免费免 Key）', provider: 'pollinations', model: 'turbo', base_url: '', credit: 0, quality: 'standard', desc: '免费快速版，适合草图预览' },
   { id: 'pollinations-realism', name: 'Pollinations 写实（免费免 Key）', provider: 'pollinations', model: 'flux-realism', base_url: '', credit: 0, quality: 'standard', desc: '免费写实风格增强' },
+  { id: 'doubao-seedream', name: '豆包 Seedream（火山方舟 · 国内可达）', provider: 'openai', model: 'doubao-seedream-5-0-260128', base_url: 'https://ark.cn-beijing.volces.com/api/v3', credit: null, quality: 'standard', desc: '字节跳动国内服务，服务器直连可达；需在系统设置填写火山方舟 API Key' },
   { id: 'custom', name: '自定义（使用系统设置）', provider: '', model: '', base_url: '', credit: null, quality: 'standard', desc: '读取系统设置→生图模型 API 接口中的配置（如 Gemini）' },
 ];
 const ASPECT_RATIOS = [
@@ -108,6 +109,16 @@ function findImgModelPreset(cfg) {
   if (cfg.provider === 'pollinations') return IMG_MODELS.find(m => m.id === 'pollinations-flux') || IMG_MODELS[0];
   const m = IMG_MODELS.find(x => x.provider === cfg.provider && x.model === cfg.model && x.id !== 'custom');
   return m || IMG_MODELS[IMG_MODELS.length - 1]; // custom
+}
+// 根据方案字段自动拼出生图提示词（绿植软装专业口吻）
+function buildSchemePrompt(s) {
+  s = s || {};
+  const room = (s.room_type || '阳台').trim() || '阳台';
+  const req = (s.requirements || '').trim();
+  let p = `室内绿植软装设计效果图，${room}空间。`;
+  if (req) p += `客户需求：${req}。`;
+  p += '整体风格自然清新、层次丰富，以琴叶榕、龟背竹、垂吊绿植等真实植物为主景，搭配木质或陶土花器，柔和自然采光，真实摄影质感，8K 高清，构图完整、留白合理。';
+  return p;
 }
 function parseQualityFromSize(aspectId, size) {
   if (aspectId === 'auto') return 'sd';
@@ -1215,6 +1226,11 @@ async function renderSettings() {
           <div class="pfield"><label>模型名</label><input id="gModel" class="wfull" value="${esc(s.img_gen_model || '')}" placeholder="如 gpt-image-1 / doubao-seedream-5-0-260128 / gemini-2.5-flash-image"></div>
         </div>
         <div class="pfield" style="margin-top:10px"><button class="btn sm ghost" id="gClearCache">🗑 清除 API 缓存并重置</button></div>
+        <div class="pfield" style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn sm" id="gTestImg">🔌 测试生图连接</button>
+          <span id="gTestImgStatus" class="hint" style="margin:0"></span>
+        </div>
+        <div class="hint" style="margin-top:6px">点「测试生图连接」可向所选引擎发一张测试小图，验证服务器能否连通（国内服务器建议用豆包 Seedream，Pollinations / Google 常被墙连不通）。</div>
       </div>
 
       <div class="section">
@@ -1275,6 +1291,30 @@ async function renderSettings() {
     state.settings = null;
     toast('API 缓存已清除，页面将刷新');
     setTimeout(() => location.reload(), 800);
+  });
+
+  // 测试生图连接：用当前系统设置向引擎发一张测试小图，验证服务器连通性
+  const gTestImg = $('#gTestImg');
+  if (gTestImg) gTestImg.addEventListener('click', async () => {
+    const st = $('#gTestImgStatus');
+    gTestImg.disabled = true; gTestImg.textContent = '测试中…';
+    if (st) { st.textContent = '正在向所选引擎发送测试小图…'; st.style.color = ''; }
+    try {
+      const r = await api('POST', '/settings/test-image-gen', {
+        provider: $('#gProvider').value,
+        model: $('#gModel').value,
+        base_url: $('#gBase').value,
+      });
+      if (r.error) throw new Error(r.error);
+      if (st) {
+        st.textContent = `✅ 连通成功：${r.provider} / ${r.model}，用时 ${r.latency_ms}ms，返回 ${r.count} 张`;
+        st.style.color = '#1a7f37';
+      }
+    } catch (err) {
+      if (st) { st.textContent = '❌ ' + err.message; st.style.color = '#c0392b'; }
+    } finally {
+      gTestImg.disabled = false; gTestImg.textContent = '🔌 测试生图连接';
+    }
   });
 
   $('#sSave').addEventListener('click', async () => {
@@ -1408,8 +1448,12 @@ function renderSchemeEditor() {
 
       <div class="section">
         <h3>③ AI 生成效果图</h3>
-        <div class="hint">选择模型、画面比例与画质后直接生成。默认「Pollinations」免费免 Key、开箱即用；如需使用 Gemini 等自有模型，请在「系统设置 → 生图模型 API 接口」中配置，并选择「自定义（使用系统设置）」。</div>
+        <div class="hint">选择模型、画面比例与画质后直接生成。国内服务器建议选「豆包 Seedream（火山方舟）」——国内直连可达，只需在系统设置填写火山方舟 API Key；默认「Pollinations」在国内常被墙连不通。也可点「用方案信息生成提示词」一键填好描述。</div>
         <textarea id="scPrompt" class="scheme-prompt" placeholder="描述你想要的阳台花园效果，例如：现代简约南向阳台，琴叶榕为主景，垂吊绿植层次，暖木色花箱，自然采光">${esc(s.requirements)}</textarea>
+        <div class="q-paste-actions" style="margin-top:6px">
+          <button class="btn sm ghost" id="scAutoPrompt">📝 用方案信息生成提示词</button>
+          <span class="hint" style="margin:0">自动根据房间类型、客户需求拼出专业提示词，生成前可再微调</span>
+        </div>
         <div class="check-row" style="margin:10px 0">
           <label><input type="checkbox" id="scRefPhoto" ${s.photos.length ? 'checked' : ''} ${s.photos.length ? '' : 'disabled'}> 以现场照片为参考图（图生图 / 垫图）</label>
         </div>
@@ -1484,6 +1528,11 @@ function renderSchemeEditor() {
   bindThumbRemove('photo'); bindThumbRemove('image');
   $('#scPhoto').addEventListener('change', onSchemePhoto);
   $('#scGen').addEventListener('click', genSchemeImages);
+  const scAutoPrompt = $('#scAutoPrompt');
+  if (scAutoPrompt) scAutoPrompt.addEventListener('click', () => {
+    $('#scPrompt').value = buildSchemePrompt(state.scheme);
+    toast('已根据方案信息生成提示词，可微调后点生成');
+  });
   $('#scModel').addEventListener('change', onSchemeModelChange);
   $('#scAspect').addEventListener('change', updateGenSizePreview);
   $('#scQuality').addEventListener('change', onSchemeQualityChange);
