@@ -3784,6 +3784,9 @@ function render(){
   var cardHmm = cardH.toFixed(2) + 'mm';
   // 屏幕预览宽度锁成纸张可用宽度，做到所见即所得
   sheet.style.width = pageW + 'mm';
+  // 每页只排 1 行（整页）时，grid 的行间距会跨页累计，把内容顶出 1~2mm，
+  // 浏览器就会多打一张空白纸 —— 单行整页时行间距直接清零。
+  sheet.style.rowGap = perRow === 1 ? '0mm' : '';
 
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
   sheet.innerHTML = DATA.map(groupHtml).join('');
