@@ -3621,10 +3621,10 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 .toolbar .tb-hint{color:#999;font-size:12px}
 .sheet-wrap{padding:10mm;display:flex;justify-content:center}
 .sheet{display:grid;grid-auto-rows:auto;width:100%;max-width:100%}
-.rcpt-group{display:flex;break-inside:avoid;page-break-inside:avoid}
+.rcpt-group{display:flex;flex-direction:column;break-inside:avoid;page-break-inside:avoid}
 .rcpt-group.multi{gap:3mm}
 .rcpt{display:flex;flex-direction:column;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
-.rcpt-group .rcpt{flex:1 1 0;min-width:0}
+.rcpt-group .rcpt{flex:1 1 0;min-width:0;min-height:0;width:100%}
 .rc-copy{font-weight:600;color:#2D5A27;background:#eef4ec;border:1px solid #cfe0cb;border-radius:3px;padding:0 4px;font-size:.92em}
 .rcpt[contenteditable="true"]{outline:1px dashed #8bbf7a;background:#fcfefb}
 .rc-h{text-align:center;font-weight:700;color:#2D5A27;font-size:1.05em;border-bottom:1px solid #2D5A27;padding-bottom:3px;margin-bottom:4px}
@@ -3687,7 +3687,7 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <button class="ghost" id="btnEdit" title="开启后可直接点击页面上任意文字修改；改完再点一次关闭">✏️ 编辑内容</button>
   <button class="ghost" id="btnReset">⟲ 恢复默认</button>
   <button class="primary" id="btnPrint">🖨️ 打印</button>
-  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；「联数」选 2 联即同一单据正联+副联左右并排。打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
+  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；「联数」选 2 联即同一单据正联+副联上下两张。打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
 </div>
 <div class="sheet-wrap"><div class="sheet f-normal gap-normal" id="sheet"></div></div>
 <script>
@@ -3757,7 +3757,7 @@ function cardHtml(s, copyIdx){
     + photos + tot + sign + foot + '</div>';
 }
 
-// 一张单据 → 一个「联组」：联数 > 1 时组内左右并排正联/副联
+// 一张单据 → 一个「联组」：联数 > 1 时组内上下堆叠正联/副联（同一单据纵向打印两份）
 function groupHtml(s){
   var copies = parseInt(readCfg().copies, 10) || 1;
   var parts = [];
@@ -3788,7 +3788,7 @@ function render(){
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
   sheet.innerHTML = DATA.map(groupHtml).join('');
 
-  // 高度与分页挂在「联组」上：整组（正联+副联）占一行，内部各联平分宽度、撑满高度
+  // 高度与分页挂在「联组」上：整组（正联+副联）占一行，纵向堆叠时各联平分高度、撑满整行
   var groups = sheet.querySelectorAll('.rcpt-group');
   for (var g = 0; g < groups.length; g++){
     // 内联 min-height 最稳：不依赖 CSS 变量与 grid 行高计算，内容多时仍可自动增高
