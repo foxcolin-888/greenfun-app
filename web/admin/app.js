@@ -2392,8 +2392,9 @@ async function loadSalesList() {
       lastDate = s.sale_date;
     }
     const sa = parseFloat(s.sales_amount) || 0;
+    const sa2 = parseFloat(s.sales_amount2) || 0;
     const ra = parseFloat(s.recharge_amount) || 0;
-    totalSales += sa;
+    totalSales += sa + sa2;
     totalRecharge += ra;
 
     html += `<tr>
@@ -2404,8 +2405,8 @@ async function loadSalesList() {
       <td>${s.photo_url ? `<img src="${esc(s.photo_url)}" class="sales-img" onerror="this.style.display='none'">` : '-'}</td>
       <td style="font-size:12px;color:var(--muted)">${esc(s.price_note || '-')}</td>
       <td class="r">${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
-      <td class="r" style="font-weight:600;color:var(--green-700)">￥${sa.toFixed(2)}</td>
-      <td>${esc(s.payment_method || '-')}</td>
+      <td class="r" style="font-weight:600;color:var(--green-700)">￥${(sa + sa2).toFixed(2)}${sa2 > 0 ? `<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${sa.toFixed(2)} + ${sa2.toFixed(2)}</span>` : ''}</td>
+      <td>${esc(s.payment_method || '-')}${s.payment_method2 ? `<br><span style="font-size:11px;color:var(--muted)">+ ${esc(s.payment_method2)}</span>` : ''}</td>
       <td>${esc(s.customer_name || '-')}</td>
       <td class="sales-actions">
         <button class="btn sm ghost" onclick="printSaleReceipt(${s.id})">🖨️ 打印</button>
@@ -2451,6 +2452,13 @@ function openSalesForm(record) {
   const initPhotos = Array.isArray(r.photo_urls) ? r.photo_urls.slice()
     : (r.photo_url ? [r.photo_url] : []);
 
+  // 收款方式选项：历史数据/接口传入的值若不在预设列表里，临时补一项，避免被默认值吞掉
+  const payOptions = cur => {
+    const list = pmts.slice();
+    if (cur && !list.includes(cur)) list.push(cur);
+    return list.map(p => `<option value="${esc(p)}" ${cur === p ? 'selected' : ''}>${esc(p)}</option>`).join('');
+  };
+
   const overlay = document.createElement('div');
   overlay.className = 'sales-form-overlay';
   overlay.innerHTML = `
@@ -2467,9 +2475,11 @@ function openSalesForm(record) {
             <input type="file" id="efPhoto" accept="image/*" multiple />
           </div>
         </div>
-        <div><label>销售收入金额（元）*</label><input type="number" id="efSalesAmt" value="${r.sales_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
+        <div><label>销售收入金额①（元）*</label><input type="number" id="efSalesAmt" value="${r.sales_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
+        <div><label>收款方式① *</label><select id="efPay">${payOptions(r.payment_method)}</select></div>
+        <div><label>销售收入金额②（元）</label><input type="number" id="efSalesAmt2" value="${r.sales_amount2 || ''}" step="0.01" min="0" placeholder="不拆分可留空" /></div>
+        <div><label>收款方式②</label><select id="efPay2"><option value="" ${!r.payment_method2 ? 'selected' : ''}>（不拆分）</option>${payOptions(r.payment_method2)}</select></div>
         <div><label>充值金额（元）</label><input type="number" id="efRechargeAmt" value="${r.recharge_amount || ''}" step="0.01" min="0" placeholder="0.00" /></div>
-        <div><label>收款方式 *</label><select id="efPay">${pmts.map(p => `<option value="${p}" ${r.payment_method === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div>
         <div><label>客户名称</label><input id="efCustomer" value="${esc(r.customer_name || '')}" placeholder="客户姓名/备注" /></div>
         <div class="full"><label>价格/折扣说明</label><textarea id="efPriceNote" placeholder="原价、折扣、套餐说明等">${esc(r.price_note || '')}</textarea></div>
         <div class="full"><label>备注</label><textarea id="efNote" placeholder="其他备注">${esc(r.note || '')}</textarea></div>
@@ -2565,11 +2575,15 @@ function openSalesForm(record) {
         recharge_amount: $('#efRechargeAmt', overlay).value,
         sales_amount: $('#efSalesAmt', overlay).value,
         payment_method: $('#efPay', overlay).value,
+        sales_amount2: $('#efSalesAmt2', overlay).value,
+        payment_method2: $('#efPay2', overlay).value,
         customer_name: $('#efCustomer', overlay).value,
         note: $('#efNote', overlay).value,
       };
-      if (!body.category || !body.payment_method) return toast('收入类别和收款方式必填');
-      if (body.sales_amount === '' && body.recharge_amount === '') return toast('至少填写销售收入或充值金额之一');
+      if (!body.category || !body.payment_method) return toast('收入类别和收款方式①必填');
+      if (!body.sales_amount && !body.sales_amount2 && body.recharge_amount === '') return toast('至少填写销售收入①/② 或充值金额之一');
+      // 填了金额②却没选收款方式②，容易漏；默认跟随①，避免报表口径断链
+      if (body.sales_amount2 && !body.payment_method2) return toast('已填「销售收入金额②」，请选择对应的「收款方式②」');
 
       let res;
       if (r.id) {
@@ -2637,6 +2651,7 @@ function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
 
   for (const item of rows) {
     const sa = parseFloat(item.sales_amount) || 0;
+    const sa2 = parseFloat(item.sales_amount2) || 0;
     const ra = parseFloat(item.recharge_amount) || 0;
     const code = 'SF-' + String(item.id).padStart(4, '0');
     let ph = item.photo_urls;
@@ -2653,8 +2668,8 @@ function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
       <td><div class="wk-imgs">${phHtml}</div></td>
       <td style="text-align:left">${esc(item.price_note || '-')}</td>
       <td>${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
-      <td style="font-weight:600;color:#c65c2a">￥${sa.toFixed(2)}</td>
-      <td>${esc(item.payment_method || '-')}</td>
+      <td style="font-weight:600;color:#c65c2a">￥${(sa + sa2).toFixed(2)}${sa2 > 0 ? `<br><span style="font-weight:400;font-size:11px;color:#999">${sa.toFixed(2)} + ${sa2.toFixed(2)}</span>` : ''}</td>
+      <td>${esc(item.payment_method || '-')}${item.payment_method2 ? `<br><span style="font-size:11px;color:#999">+ ${esc(item.payment_method2)}</span>` : ''}</td>
       <td style="text-align:left">${esc(item.customer_name || '-')}</td>
       <td>${code}</td>
       <td><span class="wk-empty">-</span></td>

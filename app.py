@@ -573,6 +573,8 @@ def init_db():
         recharge_amount REAL DEFAULT 0,
         sales_amount REAL DEFAULT 0,
         payment_method TEXT DEFAULT '',
+        sales_amount2 REAL DEFAULT 0,
+        payment_method2 TEXT DEFAULT '',
         customer_name TEXT DEFAULT '',
         note TEXT DEFAULT '',
         created_by TEXT DEFAULT '',
@@ -887,6 +889,9 @@ def _migrate_schema(conn):
     add_col("quotes", "margin", "REAL", 0)
     add_col("quotes", "payment_method", "TEXT", "")
     add_col("schemes", "gen_config", "TEXT", "{}")
+    # 门店销售：第二组「销售收入金额 / 收款方式」（一单拆两种收款方式时使用）
+    add_col("daily_sales", "sales_amount2", "REAL", 0)
+    add_col("daily_sales", "payment_method2", "TEXT", "")
     # 积分系统（表级迁移）
     c = conn.cursor()
     c.execute("""
@@ -3545,9 +3550,9 @@ def _sales_create(body, user=None):
             pass
     cur = conn.execute("""
         INSERT INTO daily_sales (sale_date, category, product_name, photo_url, photo_urls, price_note,
-            recharge_amount, sales_amount, payment_method, customer_name, note,
-            created_by, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            recharge_amount, sales_amount, payment_method, sales_amount2, payment_method2,
+            customer_name, note, created_by, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         body.get("sale_date", t[:10]),
         body.get("category", ""),
@@ -3558,6 +3563,8 @@ def _sales_create(body, user=None):
         float(body.get("recharge_amount") or 0),
         float(body.get("sales_amount") or 0),
         body.get("payment_method", ""),
+        float(body.get("sales_amount2") or 0),
+        body.get("payment_method2", ""),
         body.get("customer_name", ""),
         body.get("note", ""),
         user.get("username", "") if user else "",
@@ -3575,11 +3582,12 @@ def _sales_update(sid, body):
     fields = []
     values = []
     for k in ("sale_date","category","product_name","photo_url","photo_urls","price_note",
-              "recharge_amount","sales_amount","payment_method","customer_name","note"):
+              "recharge_amount","sales_amount","payment_method","sales_amount2","payment_method2",
+              "customer_name","note"):
         if k in body:
             fields.append(f"{k}=?")
             # numeric fields
-            if k in ("recharge_amount","sales_amount"):
+            if k in ("recharge_amount","sales_amount","sales_amount2"):
                 values.append(float(body[k]) or 0)
             elif k == "photo_urls":
                 v = body[k]
@@ -3733,8 +3741,17 @@ function cardHtml(s, copyIdx){
   rows += rowHtml('商品名称', esc(s.product_name || '-'), false);
   rows += rowHtml('价格/折扣', esc(s.price_note || '-'), false);
   if ((Number(s.recharge_amount) || 0) > 0) rows += rowHtml('充值金额', money(s.recharge_amount), true);
-  rows += rowHtml('销售收入', money(s.sales_amount), true);
-  rows += rowHtml('收款方式', esc(s.payment_method || '-'), false);
+  var sa2 = Number(s.sales_amount2) || 0;
+  if (sa2 > 0){
+    // 一单拆两种收款方式：分两行列出，各自对应收款方式
+    rows += rowHtml('销售收入①', money(s.sales_amount), true);
+    rows += rowHtml('收款方式①', esc(s.payment_method || '-'), false);
+    rows += rowHtml('销售收入②', money(sa2), true);
+    rows += rowHtml('收款方式②', esc(s.payment_method2 || '-'), false);
+  } else {
+    rows += rowHtml('销售收入', money(s.sales_amount), true);
+    rows += rowHtml('收款方式', esc(s.payment_method || '-'), false);
+  }
   if (cfg.note && s.note) rows += rowHtml('备注', esc(s.note), false);
 
   var photos = '';
@@ -3755,7 +3772,7 @@ function cardHtml(s, copyIdx){
     + '<span>客户 ' + esc(s.customer_name || '-') + '</span>'
     + (cfg.operator ? '<span>操作员 ' + esc(s.created_by || '-') + '</span>' : '')
     + '</div>';
-  var total = (Number(s.sales_amount) || 0) + (Number(s.recharge_amount) || 0);
+  var total = (Number(s.sales_amount) || 0) + (Number(s.sales_amount2) || 0) + (Number(s.recharge_amount) || 0);
   var tot = '<div class="rc-tot">合计：' + money(total) + '</div>';
   var sign = cfg.sign ? '<div class="rc-sign"><span>客户签字：______________</span><span>日期：__________</span></div>' : '';
   var foot = cfg.footer ? '<div class="rc-foot">温州绿趣植物空间艺术科技有限公司 · 鹿城区六虹桥路991号 · 0577-88868293</div>' : '';
@@ -3891,6 +3908,8 @@ def _sales_print_batch_html(ids):
             "recharge_amount": float(s.get("recharge_amount") or 0),
             "sales_amount": float(s.get("sales_amount") or 0),
             "payment_method": s.get("payment_method") or "",
+            "sales_amount2": float(s.get("sales_amount2") or 0),
+            "payment_method2": s.get("payment_method2") or "",
             "customer_name": s.get("customer_name") or "",
             "note": s.get("note") or "",
             "created_by": s.get("created_by") or "",
@@ -3912,8 +3931,22 @@ def _sales_receipt_html(sid):
     addr = "鹿城区六虹桥路991号"
     phone = "0577-88868293"
     sales_amt = float(s.get("sales_amount", 0) or 0)
+    sales_amt2 = float(s.get("sales_amount2", 0) or 0)
     recharge_amt = float(s.get("recharge_amount", 0) or 0)
-    total = sales_amt + recharge_amt
+    total = sales_amt + sales_amt2 + recharge_amt
+    # 第二组「销售收入 / 收款方式」：一单拆两种收款方式时才有值
+    if sales_amt2 > 0 or s.get("payment_method2"):
+        sales_rows = (
+            '<tr><th class="r">销售收入①</th><td class="r">&yen;' + ("%.2f" % sales_amt) + '</td></tr>'
+            + '<tr><th>收款方式①</th><td>' + esc(s.get("payment_method", "-") or "-") + '</td></tr>'
+            + '<tr><th class="r">销售收入②</th><td class="r">&yen;' + ("%.2f" % sales_amt2) + '</td></tr>'
+            + '<tr><th>收款方式②</th><td>' + esc(s.get("payment_method2", "-") or "-") + '</td></tr>'
+        )
+    else:
+        sales_rows = (
+            '<tr><th class="r">销售收入</th><td class="r">&yen;' + ("%.2f" % sales_amt) + '</td></tr>'
+            + '<tr><th>收款方式</th><td>' + esc(s.get("payment_method", "-") or "-") + '</td></tr>'
+        )
     # 预先拼好可选行，避免在 f-string 表达式内使用引号/反斜杠
     recharge_row = ""
     if recharge_amt > 0:
@@ -3958,8 +3991,7 @@ th{{background:#f5f7f4;color:#2D5A27;font-weight:600}}.r{{text-align:right}}
   <tr><th>商品名称</th><td>{s.get('product_name','-')}</td></tr>
   <tr><th>价格/折扣说明</th><td>{s.get('price_note','-') or '-'}</td></tr>
   {recharge_row}
-  <tr><th class="r">销售收入</th><td class="r">&yen;{sales_amt:.2f}</td></tr>
-  <tr><th>收款方式</th><td>{s.get('payment_method','-')}</td></tr>
+  {sales_rows}
   {photo_row}
   {note_row}
 </table>
@@ -4003,7 +4035,7 @@ def _sales_weekly_summary(week_start=None, category=None):
         if name not in customers:
             customers[name] = {"items": [], "total_sales": 0, "total_recharge": 0}
         customers[name]["items"].append(d)
-        customers[name]["total_sales"] += float(d.get("sales_amount") or 0)
+        customers[name]["total_sales"] += float(d.get("sales_amount") or 0) + float(d.get("sales_amount2") or 0)
         customers[name]["total_recharge"] += float(d.get("recharge_amount") or 0)
 
     return {
@@ -4044,7 +4076,7 @@ def _sales_monthly_summary(year=None, month=None, category=None):
         if name not in customers:
             customers[name] = {"items": [], "total_sales": 0, "total_recharge": 0}
         customers[name]["items"].append(d)
-        customers[name]["total_sales"] += float(d.get("sales_amount") or 0)
+        customers[name]["total_sales"] += float(d.get("sales_amount") or 0) + float(d.get("sales_amount2") or 0)
         customers[name]["total_recharge"] += float(d.get("recharge_amount") or 0)
     return {
         "date_start": ds.isoformat(),
