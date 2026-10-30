@@ -3620,8 +3620,14 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 .toolbar button.ghost{background:#fff;border:1px solid #ccc}
 .toolbar .tb-hint{color:#999;font-size:12px}
 .sheet-wrap{padding:10mm;display:flex;justify-content:center}
-.sheet{display:grid;grid-auto-rows:auto;width:100%;max-width:100%}
-.rcpt-group{display:flex;flex-direction:column;break-inside:avoid;page-break-inside:avoid}
+.sheet{width:100%;max-width:100%}
+/* 一页 = 一个 .page 容器，高度锁定为纸张可用高；页内单据组平分高度，
+   组内各联再平分 —— 正副联就是这样上下各占一半，不靠任何高度计算 */
+.page{display:flex;flex-direction:column;background:#fff;margin:0 auto 10mm;box-shadow:0 1px 4px rgba(0,0,0,.14)}
+.page:last-child{margin-bottom:0}
+.prow{display:flex;flex:1 1 0;min-height:0}
+.prow > *{flex:1 1 0;min-width:0}
+.rcpt-group{display:flex;flex-direction:column;flex:1 1 0;min-height:0;break-inside:avoid;page-break-inside:avoid}
 .rcpt-group.multi{gap:3mm}
 .rcpt{display:flex;flex-direction:column;border:1px solid #b9b9b9;border-radius:4px;padding:7px 9px;background:#fff;break-inside:avoid;page-break-inside:avoid}
 .rcpt-group .rcpt{flex:1 1 0;min-width:0;min-height:0;width:100%}
@@ -3647,7 +3653,9 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
 @media print{
   body{background:#fff}
   .toolbar{display:none!important}
-  .sheet-wrap{padding:0}
+  .sheet-wrap{padding:0;display:block}
+  .page{box-shadow:none;margin:0;break-after:page;page-break-after:always}
+  .page:last-child{break-after:auto;page-break-after:auto}
   .rcpt{border:1px solid #999}
   .rcpt[contenteditable]{outline:none;background:#fff}
 }
@@ -3687,7 +3695,7 @@ body{font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;color:#222;margin:0
   <button class="ghost" id="btnEdit" title="开启后可直接点击页面上任意文字修改；改完再点一次关闭">✏️ 编辑内容</button>
   <button class="ghost" id="btnReset">⟲ 恢复默认</button>
   <button class="primary" id="btnPrint">🖨️ 打印</button>
-  <span class="tb-hint">提示：先调排版、必要时点「编辑内容」改文字，最后打印；「联数」选 2 联即同一单据正联+副联上下两张。打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
+  <span class="tb-hint">提示：「每页行数」按份数算 —— 选「2 联」+「每页 2 行」即正联占上半页、副联占下半页，一张 A4 打全；打印对话框里的「缩放」请选「默认 / 100%」，选「适合页面」会把高度压扁</span>
 </div>
 <div class="sheet-wrap"><div class="sheet f-normal gap-normal" id="sheet"></div></div>
 <script>
@@ -3758,8 +3766,7 @@ function cardHtml(s, copyIdx){
 }
 
 // 一张单据 → 一个「联组」：联数 > 1 时组内上下堆叠正联/副联（同一单据纵向打印两份）
-function groupHtml(s){
-  var copies = parseInt(readCfg().copies, 10) || 1;
+function groupHtml(s, copies){
   var parts = [];
   for (var i = 0; i < copies; i++) parts.push(cardHtml(s, i));
   return '<div class="rcpt-group' + (copies > 1 ? ' multi' : '') + '">' + parts.join('') + '</div>';
@@ -3771,37 +3778,52 @@ var GAP_MM = {compact: 3, normal: 6, wide: 10};
 function render(){
   var cfg = readCfg();
   var sheet = document.getElementById('sheet');
-  sheet.className = 'sheet f-' + cfg.font + ' gap-' + cfg.gap;
-  sheet.style.gridTemplateColumns = 'repeat(' + cfg.cols + ', 1fr)';
+  sheet.className = 'sheet f-' + cfg.font;
 
-  // 每页正好排 N 行：卡片高度 =（A4 可用高 − 行间距 − 安全余量）÷ N，表格行高自动拉伸填满
-  var perRow = cfg.brk ? 1 : (parseInt(cfg.rows, 10) || 2);
+  var copies = Math.max(1, parseInt(cfg.copies, 10) || 1);
+  var cols = Math.max(1, parseInt(cfg.cols, 10) || 1);
+  // 「每页 N 行」按【份数】理解：选 2 联时「每页 2 行」= 正联占上半页 + 副联占下半页
+  var rowsWanted = cfg.brk ? 1 : (parseInt(cfg.rows, 10) || 2);
   var gapMm = GAP_MM[cfg.gap] || 6;
   var pageW = (cfg.ori === 'landscape' ? 297 : 210) - 20;    // @page 左右各 10mm 边距
   var availH = (cfg.ori === 'landscape' ? 210 : 297) - 20;   // @page 上下各 10mm 边距
-  var cardH = (availH - gapMm * (perRow - 1) - 0.8) / perRow;  // 0.8mm 安全余量，防浮点误差溢出到第二页
-  if (!(cardH > 30)) cardH = 30;
-  var cardHmm = cardH.toFixed(2) + 'mm';
-  // 屏幕预览宽度锁成纸张可用宽度，做到所见即所得
-  sheet.style.width = pageW + 'mm';
-  // 每页只排 1 行（整页）时，grid 的行间距会跨页累计，把内容顶出 1~2mm，
-  // 浏览器就会多打一张空白纸 —— 单行整页时行间距直接清零。
-  sheet.style.rowGap = perRow === 1 ? '0mm' : '';
+
+  // 每页容量 = 每页行数 × 每行张数（单位：份），再按联数换算成「单据」个数
+  var slots = rowsWanted * cols;
+  var groupsPerPage = Math.max(1, Math.floor(slots / copies));
+  if (DATA.length) groupsPerPage = Math.min(groupsPerPage, DATA.length);
 
   document.getElementById('pageStyle').textContent = '@page{size:A4 ' + cfg.ori + ';margin:10mm}';
-  sheet.innerHTML = DATA.map(groupHtml).join('');
 
-  // 高度与分页挂在「联组」上：整组（正联+副联）占一行，纵向堆叠时各联平分高度、撑满整行
-  var groups = sheet.querySelectorAll('.rcpt-group');
-  for (var g = 0; g < groups.length; g++){
-    // 内联 min-height 最稳：不依赖 CSS 变量与 grid 行高计算，内容多时仍可自动增高
-    groups[g].style.minHeight = cardHmm;
-    if (cfg.brk && g < groups.length - 1) groups[g].style.breakAfter = 'page';
+  var html = '';
+  for (var i = 0; i < DATA.length; i += groupsPerPage){
+    var chunk = DATA.slice(i, i + groupsPerPage);
+    var rowsHtml = '';
+    for (var r = 0; r < chunk.length; r += cols){
+      rowsHtml += '<div class="prow">'
+        + chunk.slice(r, r + cols).map(function(s){ return groupHtml(s, copies); }).join('')
+        + '</div>';
+    }
+    html += '<div class="page">' + rowsHtml + '</div>';
   }
+  sheet.innerHTML = html;
+
+  // 页高锁定为纸张可用高，页内用 flex 平分：每行均分页高，行内各单据均分宽度，
+  // 单据组内各联再均分高度 —— 正副联因此天然上下各占一半，不靠任何高度计算。
+  // 0.6mm 安全余量，防浮点误差把内容顶出纸张而多打一张白纸
+  var pageHmm = (availH - 0.6).toFixed(2) + 'mm';
+  var pages = sheet.querySelectorAll('.page');
+  for (var p = 0; p < pages.length; p++){
+    pages[p].style.width = pageW + 'mm';
+    pages[p].style.minHeight = pageHmm;
+    pages[p].style.gap = gapMm + 'mm';
+  }
+  var prows = sheet.querySelectorAll('.prow');
+  for (var q = 0; q < prows.length; q++) prows[q].style.gap = gapMm + 'mm';
 
   var cards = sheet.querySelectorAll('.rcpt');
-  for (var i = 0; i < cards.length; i++){
-    if (editing) cards[i].setAttribute('contenteditable', 'true');
+  for (var c = 0; c < cards.length; c++){
+    if (editing) cards[c].setAttribute('contenteditable', 'true');
   }
 }
 
