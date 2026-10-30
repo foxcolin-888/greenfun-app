@@ -23,6 +23,8 @@ import hashlib
 import secrets
 import sqlite3
 import datetime
+import sys
+import traceback
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1323,11 +1325,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        return self._serve_get(path)
+        return self._guard("GET", lambda: self._serve_get(path))
 
     def do_HEAD(self):
         path = urllib.parse.urlparse(self.path).path
-        return self._serve_get(path, head_only=True)
+        return self._guard("HEAD", lambda: self._serve_get(path, head_only=True))
+
+    def _guard(self, label, fn):
+        """统一兜底：任何未捕获异常都回 JSON 500（带原因），不再让连接被掐断。
+        http.server 里异常若逃逸到框架，连接会被直接关闭，前面 Caddy 只能回 502，
+        前端只看到「请求失败 502」，完全定位不到问题。"""
+        try:
+            return fn()
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except Exception as e:
+            try:
+                sys.stderr.write("[500] %s %s\n%s\n" % (label, self.path, traceback.format_exc()))
+                sys.stderr.flush()
+            except Exception:
+                pass
+            try:
+                self._json({"error": "服务器内部错误：%s" % e, "code": 500}, 500)
+            except Exception:
+                pass
+            return None
 
     def _serve_get(self, path, head_only=False):
         # 内部管理后台 /admin/* -> web/admin/
@@ -1361,15 +1383,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "POST")
+        return self._guard("POST", lambda: self._api_write(path, self._body(), "POST"))
 
     def do_PUT(self):
         path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "PUT")
+        return self._guard("PUT", lambda: self._api_write(path, self._body(), "PUT"))
 
     def do_DELETE(self):
         path = urllib.parse.urlparse(self.path).path
-        return self._api_write(path, self._body(), "DELETE")
+        return self._guard("DELETE", lambda: self._api_write(path, self._body(), "DELETE"))
 
     def _static(self, name, ctype=None, head_only=False):
         fp = os.path.join(WEB_DIR, name)
@@ -3560,10 +3582,10 @@ def _sales_create(body, user=None):
         cover,
         photo_urls,
         body.get("price_note", ""),
-        float(body.get("recharge_amount") or 0),
-        float(body.get("sales_amount") or 0),
+        to_float(body.get("recharge_amount")),
+        to_float(body.get("sales_amount")),
         body.get("payment_method", ""),
-        float(body.get("sales_amount2") or 0),
+        to_float(body.get("sales_amount2")),
         body.get("payment_method2", ""),
         body.get("customer_name", ""),
         body.get("note", ""),
@@ -3586,9 +3608,9 @@ def _sales_update(sid, body):
               "customer_name","note"):
         if k in body:
             fields.append(f"{k}=?")
-            # numeric fields
+            # numeric fields（表单留空会传 ''，必须用 to_float 兜底，否则 float('') 抛异常→502）
             if k in ("recharge_amount","sales_amount","sales_amount2"):
-                values.append(float(body[k]) or 0)
+                values.append(to_float(body[k]))
             elif k == "photo_urls":
                 v = body[k]
                 values.append(json.dumps(v, ensure_ascii=False) if isinstance(v, list) else (v or ""))

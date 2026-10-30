@@ -2572,18 +2572,21 @@ function openSalesForm(record) {
         photo_url: photos[0] || '',
         photo_urls: photos,
         price_note: $('#efPriceNote', overlay).value,
-        recharge_amount: $('#efRechargeAmt', overlay).value,
-        sales_amount: $('#efSalesAmt', overlay).value,
+        // 金额一律转成数字再提交：空输入框传 '' 会让后端 float('') 抛异常（表现为 502）
+        recharge_amount: parseFloat($('#efRechargeAmt', overlay).value) || 0,
+        sales_amount: parseFloat($('#efSalesAmt', overlay).value) || 0,
         payment_method: $('#efPay', overlay).value,
-        sales_amount2: $('#efSalesAmt2', overlay).value,
+        sales_amount2: parseFloat($('#efSalesAmt2', overlay).value) || 0,
         payment_method2: $('#efPay2', overlay).value,
         customer_name: $('#efCustomer', overlay).value,
         note: $('#efNote', overlay).value,
       };
       if (!body.category || !body.payment_method) return toast('收入类别和收款方式①必填');
-      if (!body.sales_amount && !body.sales_amount2 && body.recharge_amount === '') return toast('至少填写销售收入①/② 或充值金额之一');
+      if (!body.sales_amount && !body.sales_amount2 && !body.recharge_amount) return toast('至少填写销售收入①/② 或充值金额之一');
       // 填了金额②却没选收款方式②，容易漏；默认跟随①，避免报表口径断链
-      if (body.sales_amount2 && !body.payment_method2) return toast('已填「销售收入金额②」，请选择对应的「收款方式②」');
+      if (body.sales_amount2 > 0 && !body.payment_method2) return toast('已填「销售收入金额②」，请选择对应的「收款方式②」');
+      // 金额②为空时忽略填着的收款方式②，避免落库成「有方式无金额」的脏数据
+      if (!body.sales_amount2) body.payment_method2 = '';
 
       let res;
       if (r.id) {
