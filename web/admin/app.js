@@ -2537,7 +2537,7 @@ function openSalesForm(record) {
         <div class="full"><label>商品图片（可上传多张）</label>
           <div id="efPhotoDrop" class="sales-photo-dropzone">
             <div id="efPhotoGrid" class="sales-photo-grid"></div>
-            <span id="efPhotoHint" class="hint">${initPhotos.length ? '已选 ' + initPhotos.length + ' 张，点击或拖拽可继续添加' : '点击选择或拖拽多张图片到此处'}</span>
+            <span id="efPhotoHint" class="hint">${initPhotos.length ? '已选 ' + initPhotos.length + ' 张，可继续点击、拖拽或 Ctrl+V 粘贴' : '点击选择 / 拖拽 / 按 Ctrl+V 粘贴图片'}</span>
             <input type="file" id="efPhoto" accept="image/*" multiple />
           </div>
         </div>
@@ -2579,8 +2579,8 @@ function openSalesForm(record) {
     });
     if (photoHint) {
       photoHint.textContent = photos.length
-        ? `已选 ${photos.length} 张，点击或拖拽可继续添加`
-        : '点击选择或拖拽多张图片到此处';
+        ? `已选 ${photos.length} 张，可继续点击、拖拽或 Ctrl+V 粘贴`
+        : '点击选择 / 拖拽 / 按 Ctrl+V 粘贴图片';
     }
   }
   renderPhotos();
@@ -2628,8 +2628,37 @@ function openSalesForm(record) {
     });
   }
 
-  $('#sfClose', overlay).onclick = () => overlay.remove();
-  $('#sfCancel', overlay).onclick = () => overlay.remove();
+  // 粘贴上传：表单打开期间，Ctrl+V / ⌘+V 可直接粘贴截图或复制的图片
+  // 只拦截「剪贴板里确实有图片」的粘贴，纯文字粘贴照常进入输入框
+  function onPaste(e) {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const files = [];
+    Array.from(cd.items || []).forEach(it => {
+      if (it.kind === 'file' && (it.type || '').indexOf('image/') === 0) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    });
+    if (!files.length) {
+      // 兜底：部分浏览器 items 为空但 files 有值
+      Array.from(cd.files || []).forEach(f => {
+        if ((f.type || '').indexOf('image/') === 0) files.push(f);
+      });
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    files.forEach(f => uploadSalesPhoto(f));
+  }
+  document.addEventListener('paste', onPaste);
+
+  function closeForm() {
+    document.removeEventListener('paste', onPaste);
+    overlay.remove();
+  }
+
+  $('#sfClose', overlay).onclick = () => closeForm();
+  $('#sfCancel', overlay).onclick = () => closeForm();
   $('#sfSave', overlay).onclick = async () => {
     try {
       const body = {
@@ -2663,7 +2692,7 @@ function openSalesForm(record) {
       }
       if (res.error) return toast(res.error);
       toast(r.id ? '已修改' : '已登记');
-      overlay.remove();
+      closeForm();
       await loadSalesList();
     } catch (err) {
       console.error(err);
