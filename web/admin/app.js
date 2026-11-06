@@ -2323,9 +2323,16 @@ const SALES_CSS = `
 .sales-toolbar .btn-sm{padding:6px 14px;font-size:13px}
 .sales-table{width:100%;border-collapse:collapse;font-size:13px}
 .sales-table th{background:var(--green-50);color:var(--green-800);padding:9px 10px;text-align:left;font-weight:600;border-bottom:2px solid var(--border)}
+.sales-table thead th{position:sticky;top:var(--shead-top,64px);z-index:6;background:var(--green-50);box-shadow:inset 0 -2px 0 var(--border),0 3px 8px rgba(15,41,24,.07)}
 .sales-table td{padding:8px 10px;border-bottom:1px solid var(--hair);vertical-align:middle}
 .sales-table tr:hover{background:var(--cream)}
-.sales-date-group td{background:#f0f7f2;font-weight:700;color:var(--green-800);font-size:14px}
+.sales-date-group td{background:#f0f7f2;font-weight:700;color:var(--green-800);font-size:14px;cursor:pointer;user-select:none;transition:background .15s}
+.sales-date-group:hover td{background:#e4eee0}
+.sales-date-group.is-collapsed td{background:#eaf2e5}
+.sales-date-group .grp-arrow{display:inline-block;width:14px;font-size:11px;color:var(--green-700)}
+.sales-date-group .grp-meta{float:right;font-weight:400;font-size:11px;color:var(--muted);line-height:22px}
+.sales-date-group .grp-meta b{color:var(--green-700);font-weight:600}
+#weeklyPanel{scroll-margin-top:calc(var(--shead-top,64px) + 34px)}
 .sales-img{width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--hair)}
 .sales-actions button{margin-right:4px;padding:3px 8px;font-size:12px}
 .sales-form-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center}
@@ -2397,6 +2404,7 @@ async function renderSales() {
       <select id="sfSummaryCat" style="width:130px"><option value="">全部类别</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select>
       <button class="btn sm amber" id="sfWeekly">📊 本周汇总</button>
       <button class="btn sm amber" id="sfMonthly">📅 本月汇总</button>
+      <button class="btn sm ghost" id="sfToggleGroups" title="收起每日登记明细，一屏直接看到汇总">⊟ 收起明细</button>
     </div>
     <div id="salesList"></div>
     <div id="weeklyPanel" style="display:none"></div>
@@ -2417,11 +2425,28 @@ async function renderSales() {
 
   // 批量打印：勾选多张单子 → 一张纸打印多张
   $('#sfBatchPrint').addEventListener('click', batchPrintSales);
+  $('#sfToggleGroups').addEventListener('click', toggleAllGroups);
+  // 点日期分组行 → 收起/展开当天明细（数字列很长时不至于一直滑）
+  $('#salesList').addEventListener('click', e => {
+    const g = e.target.closest && e.target.closest('tr.sales-date-group');
+    if (!g) return;
+    toggleGroup(g.dataset.date);
+  });
+  // 表头吸顶：跟随顶部导航栏高度（导航栏本身也是 sticky）
+  const applyHeadTop = () => {
+    const tb = document.querySelector('.topbar');
+    document.documentElement.style.setProperty('--shead-top', ((tb ? tb.offsetHeight : 64) - 2) + 'px');
+  };
+  applyHeadTop();
+  if (window.__salesHeadTop) window.removeEventListener('resize', window.__salesHeadTop);
+  window.__salesHeadTop = applyHeadTop;
+  window.addEventListener('resize', applyHeadTop);
   // 列表每次重绘都换 DOM，勾选事件用委托挂在容器上（容器本身不重建）
   $('#salesList').addEventListener('change', e => {
     if (e.target && e.target.id === 'salesSelAll') {
       const on = e.target.checked;
-      document.querySelectorAll('.sales-sel').forEach(c => { c.checked = on; });
+      // 只勾选当前可见（未被收起）的单子，避免把隐藏记录也打印出去
+      document.querySelectorAll('.sales-sel').forEach(c => { if (c.offsetParent !== null) c.checked = on; });
     }
     updateSalesSelCount();
   });
@@ -2444,48 +2469,111 @@ async function loadSalesList() {
     return;
   }
 
-  // 按日期分组
+  // 按日期分组（先聚合，才能在每个日期行上显示「N 笔 · 当日合计」）
+  const groups = [];
+  for (const s of list) {
+    const d = s.sale_date || '';
+    let g = groups[groups.length - 1];
+    if (!g || g.date !== d) { g = { date: d, items: [], sales: 0, recharge: 0 }; groups.push(g); }
+    g.items.push(s);
+    g.sales += (parseFloat(s.sales_amount) || 0) + (parseFloat(s.sales_amount2) || 0);
+    g.recharge += parseFloat(s.recharge_amount) || 0;
+  }
+  // 换了查询条件后，清掉不再出现的日期，避免收起状态串到别的日期范围
+  if (state._salesCollapsed && state._salesCollapsed.size) {
+    const valid = new Set(groups.map(g => g.date));
+    for (const d of Array.from(state._salesCollapsed)) if (!valid.has(d)) state._salesCollapsed.delete(d);
+  }
+
   let html = '<table class="sales-table"><thead><tr><th width="34"><input type="checkbox" id="salesSelAll" title="全选/取消全选"></th><th width="90">日期</th><th width="110">收入类别</th><th>商品名</th><th width="60">图片</th><th width="130">价格/折扣</th><th width="80">充值</th><th width="85">销售收入</th><th width="100">收款方式</th><th width="120">客户</th><th width="120">操作</th></tr></thead><tbody>';
-  let lastDate = '';
   let totalSales = 0, totalRecharge = 0;
 
-  for (const s of list) {
-    const dateLabel = s.sale_date !== lastDate ? esc(s.sale_date) : '';
-    if (dateLabel) {
-      if (lastDate) html += `<tr><td colspan="11" style="background:#f9f9f9;font-size:11px;color:#999;text-align:right;padding:2px 10px">小计：销售￥${totalSales.toFixed(2)} / 充值￥${totalRecharge.toFixed(2)}</td></tr>`;
-      totalSales = 0; totalRecharge = 0;
-      html += `<tr class="sales-date-group"><td colspan="11">📅 ${dateLabel}</td></tr>`;
-      lastDate = s.sale_date;
-    }
-    const sa = parseFloat(s.sales_amount) || 0;
-    const sa2 = parseFloat(s.sales_amount2) || 0;
-    const ra = parseFloat(s.recharge_amount) || 0;
-    totalSales += sa + sa2;
-    totalRecharge += ra;
+  for (const g of groups) {
+    const d = g.date;
+    const gd = esc(d);
+    totalSales += g.sales;
+    totalRecharge += g.recharge;
+    // 日期分组行：可点击收起/展开当天明细
+    html += `<tr class="sales-date-group" data-date="${gd}" title="点击收起/展开当天明细">
+      <td colspan="11"><span class="grp-arrow">▾</span>📅 ${gd}
+        <span class="grp-meta">${g.items.length} 笔 · 销售 <b>￥${g.sales.toFixed(2)}</b> · 充值 ￥${g.recharge.toFixed(2)}</span></td></tr>`;
 
-    html += `<tr>
-      <td><input type="checkbox" class="sales-sel" value="${s.id}"></td>
-      <td>${dateLabel ? '' : ''}</td>
-      <td>${esc(s.category)}</td>
-      <td style="font-weight:500">${esc(s.product_name || '-')}</td>
-      <td>${s.photo_url ? `<img src="${esc(s.photo_url)}" class="sales-img" onerror="this.style.display='none'">` : '-'}</td>
-      <td style="font-size:12px;color:var(--muted)">${esc(s.price_note || '-')}</td>
-      <td class="r">${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
-      <td class="r" style="font-weight:600;color:var(--green-700)">￥${(sa + sa2).toFixed(2)}${sa2 > 0 ? `<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${sa.toFixed(2)} + ${sa2.toFixed(2)}</span>` : ''}</td>
-      <td>${esc(s.payment_method || '-')}${s.payment_method2 ? `<br><span style="font-size:11px;color:var(--muted)">+ ${esc(s.payment_method2)}</span>` : ''}</td>
-      <td>${esc(s.customer_name || '-')}</td>
-      <td class="sales-actions">
-        <button class="btn sm ghost" onclick="printSaleReceipt(${s.id})">🖨️ 打印</button>
-        ${can('sales_edit') ? `<button class="btn sm ghost" onclick="editSaleRecord(${s.id})">✏️ 编辑</button>` : ''}
-        ${can('sales_delete') ? `<button class="btn sm ghost" onclick="deleteSaleRecord(${s.id})">🗑️</button>` : ''}
-      </td>
-    </tr>`;
+    for (const s of g.items) {
+      const sa = parseFloat(s.sales_amount) || 0;
+      const sa2 = parseFloat(s.sales_amount2) || 0;
+      const ra = parseFloat(s.recharge_amount) || 0;
+      html += `<tr class="sales-row" data-group="${gd}">
+        <td><input type="checkbox" class="sales-sel" value="${s.id}"></td>
+        <td></td>
+        <td>${esc(s.category)}</td>
+        <td style="font-weight:500">${esc(s.product_name || '-')}</td>
+        <td>${s.photo_url ? `<img src="${esc(s.photo_url)}" class="sales-img" onerror="this.style.display='none'">` : '-'}</td>
+        <td style="font-size:12px;color:var(--muted)">${esc(s.price_note || '-')}</td>
+        <td class="r">${ra > 0 ? '￥' + ra.toFixed(2) : ''}</td>
+        <td class="r" style="font-weight:600;color:var(--green-700)">￥${(sa + sa2).toFixed(2)}${sa2 > 0 ? `<br><span style="font-weight:400;font-size:11px;color:var(--muted)">${sa.toFixed(2)} + ${sa2.toFixed(2)}</span>` : ''}</td>
+        <td>${esc(s.payment_method || '-')}${s.payment_method2 ? `<br><span style="font-size:11px;color:var(--muted)">+ ${esc(s.payment_method2)}</span>` : ''}</td>
+        <td>${esc(s.customer_name || '-')}</td>
+        <td class="sales-actions">
+          <button class="btn sm ghost" onclick="printSaleReceipt(${s.id})">🖨️ 打印</button>
+          ${can('sales_edit') ? `<button class="btn sm ghost" onclick="editSaleRecord(${s.id})">✏️ 编辑</button>` : ''}
+          ${can('sales_delete') ? `<button class="btn sm ghost" onclick="deleteSaleRecord(${s.id})">🗑️</button>` : ''}
+        </td>
+      </tr>`;
+    }
+    html += `<tr class="sales-subtotal" data-group="${gd}"><td colspan="11" style="background:#f9f9f9;font-size:11px;color:#999;text-align:right;padding:2px 10px">本日小计：销售￥${g.sales.toFixed(2)} / 充值￥${g.recharge.toFixed(2)}</td></tr>`;
   }
+
   html += `<tr><td colspan="11" style="background:#e8f0e4;font-size:12px;text-align:right;padding:4px 10px;font-weight:bold;color:var(--green-800)">
     合计：销售￥${totalSales.toFixed(2)} · 充值￥${totalRecharge.toFixed(2)}
   </td></tr></tbody></table>`;
   container.innerHTML = html;
+  applySalesCollapse();
   updateSalesSelCount();
+}
+
+// ---- 每日明细的收起/展开 ----
+function applySalesCollapse() {
+  const list = document.getElementById('salesList');
+  if (!list) return;
+  const set = state._salesCollapsed || (state._salesCollapsed = new Set());
+  list.querySelectorAll('tr[data-group]').forEach(tr => {
+    tr.style.display = set.has(tr.dataset.group) ? 'none' : '';
+  });
+  list.querySelectorAll('tr.sales-date-group').forEach(g => {
+    const hid = set.has(g.dataset.date);
+    g.classList.toggle('is-collapsed', hid);
+    const a = g.querySelector('.grp-arrow');
+    if (a) a.textContent = hid ? '▸' : '▾';
+  });
+  const btn = document.getElementById('sfToggleGroups');
+  if (btn) {
+    // 文案表示「点下去会发生什么」：还有展开的 → 收起全部；已全收 → 展开全部
+    const all = Array.from(list.querySelectorAll('tr.sales-date-group')).map(g => g.dataset.date);
+    btn.textContent = (all.length && all.some(d => !set.has(d))) ? '⊟ 收起明细' : '⊞ 展开明细';
+  }
+}
+
+function toggleGroup(date) {
+  if (!date) return;
+  const set = state._salesCollapsed || (state._salesCollapsed = new Set());
+  if (set.has(date)) set.delete(date); else set.add(date);
+  applySalesCollapse();
+}
+
+function toggleAllGroups() {
+  const set = state._salesCollapsed || (state._salesCollapsed = new Set());
+  const all = Array.from(document.querySelectorAll('tr.sales-date-group')).map(g => g.dataset.date);
+  if (!all.length) return toast('当前没有销售记录');
+  // 还有展开的就全部收起，全收了就全部展开
+  if (all.some(d => !set.has(d))) { all.forEach(d => set.add(d)); toast('已收起每日明细'); }
+  else { set.clear(); toast('已展开每日明细'); }
+  applySalesCollapse();
+}
+
+function collapseAllGroups() {
+  const set = state._salesCollapsed || (state._salesCollapsed = new Set());
+  document.querySelectorAll('tr.sales-date-group').forEach(g => set.add(g.dataset.date));
+  applySalesCollapse();
 }
 
 function salesSelectedIds() {
@@ -2727,7 +2815,10 @@ function buildLedgerHTML(title, rows, grandSales, grandRecharge) {
   let html = `<div class="weekly-summary">
     <div class="summary-head">
       <h3>📊 ${title}</h3>
-      <button class="btn sm ghost" onclick="printLedger('${title.replace(/'/g, "")}')">🖨️ 打印本表</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm ghost" onclick="expandAndScrollToList()">↑ 回到明细</button>
+        <button class="btn sm ghost" onclick="printLedger('${title.replace(/'/g, "")}')">🖨️ 打印本表</button>
+      </div>
     </div>
     <table class="weekly-ledger">
       <thead>
@@ -2800,10 +2891,19 @@ async function loadWeeklySummary() {
   panel.style.display = '';
   const custNames = Object.keys(data.customers || {});
   const title = `本周消费汇总${cat ? ' · ' + cat : ''}（${data.week_start} ~ ${data.week_end}）`;
-  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
+  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); scrollToSummary(); return; }
   const rows = [];
   for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);
   panel.innerHTML = buildLedgerHTML(title, rows, data.grand_total_sales, data.grand_total_recharge);
+  scrollToSummary();
+}
+
+// 汇总出结果后：自动收起每日明细 + 滚到汇总，省掉"一路滑过所有登记"的麻烦
+function scrollToSummary() {
+  collapseAllGroups();
+  const panel = document.getElementById('weeklyPanel');
+  if (!panel) return;
+  setTimeout(() => { try { panel.scrollIntoView({ behavior: 'auto', block: 'start' }); } catch (e) { panel.scrollIntoView(); } }, 60);
 }
 
 async function loadMonthlySummary() {
@@ -2816,11 +2916,19 @@ async function loadMonthlySummary() {
   panel.style.display = '';
   const custNames = Object.keys(data.customers || {});
   const title = `本月消费汇总${cat ? ' · ' + cat : ''}（${data.date_start} ~ ${data.date_end}）`;
-  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); return; }
+  if (!custNames.length) { panel.innerHTML = buildLedgerHTML(title, [], 0, 0); scrollToSummary(); return; }
   const rows = [];
   for (const name of custNames) for (const item of data.customers[name].items) rows.push(item);
   panel.innerHTML = buildLedgerHTML(title, rows, data.grand_total_sales, data.grand_total_recharge);
+  scrollToSummary();
 }
+
+window.expandAndScrollToList = function () {
+  if (state._salesCollapsed) state._salesCollapsed.clear();
+  applySalesCollapse();
+  const list = document.getElementById('salesList');
+  if (list) { try { list.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { list.scrollIntoView(); } }
+};
 
 window.printLedger = function(title) {
   const panel = document.getElementById('weeklyPanel');
