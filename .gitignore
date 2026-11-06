@@ -27,6 +27,7 @@ nul
 
 # 本地测试临时目录
 .tmp/
+_itest_tmp/
 
 # 一次性推送脚本（含 PAT，勿提交，用完删除）
 push_to_github.bat

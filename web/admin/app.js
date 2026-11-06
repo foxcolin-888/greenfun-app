@@ -1151,7 +1151,7 @@ async function renderUsers() {
           <td>${esc(ROLE_NAMES[u.role]||u.role)}</td>
           <td class="perm-cell">${permCell(u)}</td>
           <td>${u.active?'<span class="status-pill st-deal">启用</span>':'<span class="status-pill st-loss">停用</span>'}</td>
-          <td><button class="btn sm ghost" data-eu='${JSON.stringify(u).replace(/'/g,"&#39;")}'>编辑</button> ${u.username!==state.user.username?`<button class="btn sm ghost" data-du="${u.id}">停用</button>`:''}</td>
+          <td><button class="btn sm ghost" data-eu='${JSON.stringify(u).replace(/'/g,"&#39;")}'>编辑·权限</button> ${u.username!==state.user.username?`<button class="btn sm ghost" data-du="${u.id}">停用</button> <button class="btn sm danger" data-pu="${u.id}" data-pn="${esc(u.name||u.username)}">删除</button>`:''}</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -1164,6 +1164,14 @@ async function renderUsers() {
     const r = await api('DELETE', '/users/' + b.dataset.du);
     if (r.error) return toast(r.error);
     toast('已停用'); renderUsers();
+  }));
+  // 彻底删除账号（仅管理员可见；不可恢复）
+  $$('[data-pu]').forEach(b => b.addEventListener('click', async () => {
+    const nm = b.dataset.pn || '';
+    if (!confirm(`彻底删除账号「${nm}」？\n\n· 删除后无法恢复，该账号会立即退出登录\n· 历史销售、客户等记录会保留（操作人姓名不变）\n\n如果只是想暂时禁止登录，请改用「停用」。`)) return;
+    const r = await api('DELETE', '/users/' + b.dataset.pu + '/purge');
+    if (r.error) return toast(r.error);
+    toast('已删除'); renderUsers();
   }));
 }
 function editUser(u) {

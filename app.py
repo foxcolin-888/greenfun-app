@@ -103,9 +103,14 @@ def _eff_perms(u):
 
 
 def has_perm(u, key):
-    """账号是否拥有某权限：管理员恒有；否则看有效权限集合。"""
-    if not isinstance(u, dict):
+    """账号是否拥有某权限：管理员恒有；否则看有效权限集合。兼容 sqlite3.Row。"""
+    if not u:
         return False
+    if not isinstance(u, dict):
+        try:
+            u = dict(u)
+        except Exception:
+            return False
     if u.get("role") == "admin":
         return True
     return key in _eff_perms(u)
@@ -1420,9 +1425,9 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_get(self, path, head_only=False):
         # 内部管理后台 /admin/* -> web/admin/
         if path == "/admin" or path == "/admin/":
-            return self._static("admin/index.html", "text/html; charset=utf-8", head_only=head_only)
+            return self._static("admin/index.html", "text/html; charset=utf-8", head_only=head_only, no_cache=True)
         if path.startswith("/admin/"):
-            return self._static(path[1:], None, head_only=head_only)  # 自动推断 content-type
+            return self._static(path[1:], None, head_only=head_only, no_cache=True)  # 自动推断 content-type
         # 上传资源（现场照片 / AI 效果图） -> UPLOAD_DIR（可指向持久盘 /data/uploads）
         if path.startswith("/uploads/"):
             return self._serve_upload(path[len("/uploads/"):], head_only=head_only)
@@ -1459,21 +1464,26 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         return self._guard("DELETE", lambda: self._api_write(path, self._body(), "DELETE"))
 
-    def _static(self, name, ctype=None, head_only=False):
+    def _static(self, name, ctype=None, head_only=False, no_cache=False):
         fp = os.path.join(WEB_DIR, name)
         if not os.path.exists(fp) or os.path.isdir(fp):
             return self._html_error(404, "资源未找到：%s" % name)
         if ctype is None:
             ctype = self._guess_ctype(fp)
+        # 后台页面禁用浏览器缓存：否则改版后用户看到的仍是旧 app.js（需手动强刷）
+        extra = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache", "Expires": "0"} if no_cache else None
         if head_only:
             size = os.path.getsize(fp)
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(size))
+            if extra:
+                for k, v in extra.items():
+                    self.send_header(k, v)
             self.end_headers()
             return
         with open(fp, "rb") as f:
-            self._send(200, f.read(), ctype)
+            self._send(200, f.read(), ctype, extra=extra)
 
     def _serve_upload(self, rel, head_only=False):
         """服务 UPLOAD_DIR 下的上传资源（持久盘感知）。"""
@@ -1748,6 +1758,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._create_user(body), 201)
         if path.startswith("/api/users/"):
             parts = path.split("/")
+            # 彻底删除账号（DELETE /api/users/<id>/purge），与「停用」区分
+            if len(parts) == 5 and parts[3].isdigit() and parts[4] == "purge":
+                if u["role"] != "admin":
+                    return self._json({"error": "无权限"}, 403)
+                if method not in ("DELETE", "POST"):
+                    return self._json({"error": "method not allowed"}, 405)
+                return self._json(self._purge_user(int(parts[3]), u))
             if len(parts) == 4 and parts[3].isdigit():
                 if u["role"] != "admin":
                     return self._json({"error": "无权限"}, 403)
@@ -2284,6 +2301,29 @@ class Handler(BaseHTTPRequestHandler):
         conn.commit()
         conn.close()
         return {"ok": True}
+
+    def _purge_user(self, uid, u):
+        """彻底删除账号（不可恢复）。单据里存的是操作人姓名文本，删账号不影响历史账目。"""
+        conn = get_db()
+        r = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        if not r:
+            conn.close()
+            return {"error": "账号不存在"}
+        if r["username"] == u["username"]:
+            conn.close()
+            return {"error": "不能删除当前登录账号"}
+        if r["role"] == "admin":
+            cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
+            if cnt <= 1:
+                conn.close()
+                return {"error": "系统至少要保留一个管理员账号"}
+        conn.execute("DELETE FROM users WHERE id=?", (uid,))
+        conn.commit()
+        conn.close()
+        # 该账号已登录的会话立即失效
+        for tk in [t for t, s in list(SESSIONS.items()) if s.get("username") == r["username"]]:
+            SESSIONS.pop(tk, None)
+        return {"ok": True, "username": r["username"]}
 
     # ---- 报价 ----
     def _quote_parse(self, body):
