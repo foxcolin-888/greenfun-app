@@ -48,6 +48,69 @@ SESSIONS = {}
 ROLE_NAMES = {"admin": "管理员", "manager": "店长", "sales": "销售顾问", "designer": "设计师"}
 
 # ---------------------------------------------------------------------------
+# 员工账号「权限选择授权」体系
+# - 角色仍是粗粒度基线，permissions 是账号级可勾选的细粒度授权（管理人员在新增/编辑账号时勾选）
+# - 权限为空（历史账号 / 未勾选）时，回落到角色默认权限，保证既有账号不丢能力
+# - 管理员恒拥有全部权限，无需逐条勾选
+# ---------------------------------------------------------------------------
+PERMISSION_LABELS = {
+    "sales_create": "登记销售记录",
+    "sales_edit": "修改销售记录",
+    "sales_delete": "删除销售记录",
+    "upload": "上传图片",
+    "customer": "客户档案管理",
+    "quote": "报价单管理",
+    "scheme": "方案设计",
+    "price": "价格库管理",
+    "case": "案例管理",
+    "site": "站点内容编辑",
+    "export": "数据导出",
+}
+# 各角色默认权限（无显式 permissions 时作为基线）
+ROLE_DEFAULT_PERMS = {
+    "admin": None,  # 管理员恒拥有全部
+    "manager": ["sales_create", "sales_edit", "sales_delete", "upload",
+                "customer", "quote", "scheme", "price", "case", "site", "export"],
+    "designer": ["sales_create", "sales_edit", "upload",
+                 "customer", "quote", "scheme", "case"],
+    "sales": ["sales_create", "sales_edit", "upload", "customer"],
+}
+
+# 上传目录白名单：销售角色只能落到 sales 目录；其余角色走前端传入的 folder
+UPLOAD_FOLDER_BY_ROLE = {"sales": "sales"}
+
+
+def _eff_perms(u):
+    """账号有效权限集合：有显式 permissions 用显式，否则回落角色默认。
+    u 可能是后端会话 dict（permissions 为 JSON 字符串）或 sqlite3.Row（需先转 dict）。"""
+    if not u:
+        return set()
+    if not isinstance(u, dict):
+        try:
+            u = dict(u)
+        except Exception:
+            return set()
+    raw = u.get("permissions")
+    if raw:
+        try:
+            p = json.loads(raw)
+            if isinstance(p, list):
+                return set(p)
+        except Exception:
+            pass
+    d = ROLE_DEFAULT_PERMS.get(u.get("role", ""))
+    return set(d) if d else set()
+
+
+def has_perm(u, key):
+    """账号是否拥有某权限：管理员恒有；否则看有效权限集合。"""
+    if not isinstance(u, dict):
+        return False
+    if u.get("role") == "admin":
+        return True
+    return key in _eff_perms(u)
+
+# ---------------------------------------------------------------------------
 # 八大阶段配置（字段与 V5 管理手册 55 份表单逐字对齐）
 # ---------------------------------------------------------------------------
 STAGES = [
@@ -442,6 +505,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE, pw TEXT, name TEXT,
         role TEXT DEFAULT 'sales', active INTEGER DEFAULT 1,
+        permissions TEXT DEFAULT '',
         created_at TEXT
     )""")
     c.execute("""
@@ -894,6 +958,8 @@ def _migrate_schema(conn):
     # 门店销售：第二组「销售收入金额 / 收款方式」（一单拆两种收款方式时使用）
     add_col("daily_sales", "sales_amount2", "REAL", 0)
     add_col("daily_sales", "payment_method2", "TEXT", "")
+    # 员工账号「权限选择授权」：账号级细粒度权限（JSON 数组），为空时回落角色默认
+    add_col("users", "permissions", "TEXT", "")
     # 积分系统（表级迁移）
     c = conn.cursor()
     c.execute("""
@@ -1515,7 +1581,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(_sales_get(int(path.split("/")[3])))
 
         if path == "/api/me":
-            return self._json({"user": {k: u[k] for k in ("username", "name", "role")}})
+            return self._json({"user": {"username": u["username"], "name": u["name"],
+                                       "role": u["role"], "permissions": sorted(_eff_perms(u))}})
+        # 权限目录（标签 + 角色默认），供后台「账号权限」勾选界面使用
+        if path == "/api/permissions":
+            return self._json({"labels": PERMISSION_LABELS, "role_defaults": ROLE_DEFAULT_PERMS})
         if path == "/api/me/credits":
             return self._json({"balance": self._credit_balance(u["username"])})
         if path == "/api/credits/prices":
@@ -1639,16 +1709,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "无权限"}, 403)
             return self._json(self._update_settings(body))
 
-        # ---- 门店销售记录（写入） ----
+        # ---- 门店销售记录（写入，按权限闸门） ----
         if path == "/api/sales" and method == "POST":
+            if not has_perm(u, "sales_create"):
+                return self._json({"error": "无权限：需「登记销售记录」授权"}, 403)
             return self._json(_sales_create(body, u), 201)
         if path.startswith("/api/sales/"):
             sp = path.split("/")
             if len(sp) == 4 and sp[3].isdigit():
                 sid = int(sp[3])
                 if method == "PUT":
+                    if not has_perm(u, "sales_edit"):
+                        return self._json({"error": "无权限：需「修改销售记录」授权"}, 403)
                     return self._json(_sales_update(sid, body))
                 if method == "DELETE":
+                    if not has_perm(u, "sales_delete"):
+                        return self._json({"error": "无权限：需「删除销售记录」授权"}, 403)
                     return self._json(_sales_delete(sid))
 
         # 预约线索（管理员/店长可删除）
@@ -1771,11 +1847,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "无权限"}, 403)
             return self._json(_save_site_config(body))
 
-        # 站点配图上传（管理员/店长/设计师），folder=site 用于全站背景/配图/Logo 等
+        # 图片上传：按「上传图片」权限闸门；销售角色只能上传到 sales 目录，其余角色走前端传入 folder
         if path == "/api/upload" and method == "POST":
-            if u["role"] not in ("admin", "manager", "designer"):
-                return self._json({"error": "无权限"}, 403)
-            return self._json(self._scheme_upload({**body, "folder": body.get("folder") or "site"}))
+            if not has_perm(u, "upload"):
+                return self._json({"error": "无权限：当前账号未开启「上传图片」授权"}, 403)
+            folder = body.get("folder") or "site"
+            if u["role"] in UPLOAD_FOLDER_BY_ROLE:
+                folder = UPLOAD_FOLDER_BY_ROLE[u["role"]]
+            return self._json(self._scheme_upload({**body, "folder": folder}))
 
         return self._json({"error": "unknown"}, 404)
 
@@ -1791,9 +1870,13 @@ class Handler(BaseHTTPRequestHandler):
         token = secrets.token_hex(24)
         SESSIONS[token] = {
             "username": r["username"], "name": r["name"], "role": r["role"],
+            "permissions": json.dumps(sorted(_eff_perms(r))),
             "exp": datetime.datetime.now().timestamp() + SESSION_TTL,
         }
-        return self._json({"token": token, "user": {"username": r["username"], "name": r["name"], "role": r["role"]}})
+        return self._json({"token": token, "user": {
+            "username": r["username"], "name": r["name"], "role": r["role"],
+            "permissions": sorted(_eff_perms(r)),
+        }})
 
     def _logout(self):
         h = self.headers.get("Authorization", "")
@@ -2111,9 +2194,17 @@ class Handler(BaseHTTPRequestHandler):
     # ---- 员工账号 ----
     def _list_users(self):
         conn = get_db()
-        rows = conn.execute("SELECT id, username, name, role, active, created_at FROM users ORDER BY id").fetchall()
+        rows = conn.execute("SELECT id, username, name, role, active, permissions, created_at FROM users ORDER BY id").fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["permissions"] = json.loads(d["permissions"]) if d.get("permissions") else []
+            except Exception:
+                d["permissions"] = []
+            out.append(d)
+        return out
 
     def _list_contacts(self):
         conn = get_db()
@@ -2133,14 +2224,19 @@ class Handler(BaseHTTPRequestHandler):
         pw = body.get("password") or ""
         if not username or not pw:
             return {"error": "用户名和密码必填"}
+        perms = body.get("permissions")
+        if isinstance(perms, list):
+            perms = json.dumps([p for p in perms if p in PERMISSION_LABELS])
+        else:
+            perms = ""
         conn = get_db()
         exist = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
         if exist:
             conn.close()
             return {"error": "用户名已存在"}
         cur = conn.execute(
-            "INSERT INTO users (username, pw, name, role, active, created_at) VALUES (?,?,?,?,1,?)",
-            (username, hash_pw(pw), body.get("name", username), body.get("role", "sales"), now_str()))
+            "INSERT INTO users (username, pw, name, role, active, permissions, created_at) VALUES (?,?,?,?,1,?,?)",
+            (username, hash_pw(pw), body.get("name", username), body.get("role", "sales"), perms, now_str()))
         conn.commit()
         uid = cur.lastrowid
         conn.close()
@@ -2161,6 +2257,10 @@ class Handler(BaseHTTPRequestHandler):
         if body.get("password"):
             sets.append("pw=?")
             vals.append(hash_pw(body["password"]))
+        # 账号级权限：列表 → JSON 存储；传空列表表示清空（回落角色默认）
+        if "permissions" in body and isinstance(body["permissions"], list):
+            sets.append("permissions=?")
+            vals.append(json.dumps([p for p in body["permissions"] if p in PERMISSION_LABELS]))
         if sets:
             vals.append(uid)
             conn.execute(f"UPDATE users SET {','.join(sets)} WHERE id=?", vals)

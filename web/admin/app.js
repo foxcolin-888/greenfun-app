@@ -70,6 +70,14 @@ function esc(s) {
   return (s == null ? '' : String(s))
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+// 账号是否拥有某权限：管理员恒有；否则看登录时返回的 permissions（已按角色默认回落）
+function can(perm) {
+  const u = state.user;
+  if (!u) return false;
+  if (u.role === 'admin') return true;
+  const ps = u.permissions || [];
+  return ps.includes(perm);
+}
 const stageName = id => (state.stages.find(s => s.id === +id) || {}).name || ('阶段' + id);
 const STATUS_CLASS = { '线索': 'st-lead', '已成交': 'st-deal', '无效': 'st-loss' };
 const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
@@ -1104,10 +1112,31 @@ function editPrice(p, cats) {
 }
 
 // ---------------- 员工账号（管理员） ----------------
+const PERM_LABEL_SHORT = { sales_create:'登记', sales_edit:'改单', sales_delete:'删单', upload:'上传图', customer:'客户', quote:'报价', scheme:'方案', price:'价格库', case:'案例', site:'站点', export:'导出' };
 async function renderUsers() {
-  const users = await api('GET', '/users');
+  const [users, permInfo] = await Promise.all([
+    api('GET', '/users'),
+    api('GET', '/permissions'),
+  ]);
+  state._permLabels = permInfo.labels || {};
+  state._roleDefaults = permInfo.role_defaults || {};
+  const permCell = u => {
+    const ps = (u.permissions && u.permissions.length) ? u.permissions
+              : (state._roleDefaults[u.role] || []);
+    if (u.role === 'admin') return '<span class="perm-tag all">全部权限</span>';
+    if (!ps.length) return '<span class="perm-tag">（角色默认）</span>';
+    return ps.map(p => `<span class="perm-tag">${PERM_LABEL_SHORT[p]||p}</span>`).join('');
+  };
   const app = $('#app');
   app.innerHTML = `
+    <style>
+      .perm-group{display:flex;flex-wrap:wrap;gap:8px 14px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#fafcf9}
+      .perm-chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);cursor:pointer}
+      .perm-chk input{width:15px;height:15px;accent-color:var(--green-600)}
+      .perm-cell{line-height:1.9}
+      .perm-tag{display:inline-block;padding:1px 7px;margin:1px 3px 1px 0;border-radius:10px;background:#eaf3e6;color:#3a6b2c;font-size:12px;white-space:nowrap}
+      .perm-tag.all{background:#fbe9d0;color:#9a5b14}
+    </style>
     <div class="toolbar">
       <b style="color:var(--green-900)">员工账号（${users.length}）</b>
       <div class="spacer"></div>
@@ -1115,17 +1144,18 @@ async function renderUsers() {
       <button class="btn sm" id="uNew">+ 新增账号</button>
     </div>
     <table class="price-table">
-      <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+      <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>权限授权</th><th>状态</th><th>操作</th></tr></thead>
       <tbody>
         ${users.map(u=>`<tr>
           <td><b>${esc(u.username)}</b></td><td>${esc(u.name)}</td>
           <td>${esc(ROLE_NAMES[u.role]||u.role)}</td>
+          <td class="perm-cell">${permCell(u)}</td>
           <td>${u.active?'<span class="status-pill st-deal">启用</span>':'<span class="status-pill st-loss">停用</span>'}</td>
           <td><button class="btn sm ghost" data-eu='${JSON.stringify(u).replace(/'/g,"&#39;")}'>编辑</button> ${u.username!==state.user.username?`<button class="btn sm ghost" data-du="${u.id}">停用</button>`:''}</td>
         </tr>`).join('')}
       </tbody>
     </table>
-    <div class="hint" style="margin-top:12px">角色权限：<b>管理员</b>=全部含账号与价格库；<b>店长</b>=看全部客户+审批报价+改价格库；<b>销售顾问</b>=仅自己的客户；<b>设计师</b>=看全部客户+做方案报价。</div>`;
+    <div class="hint" style="margin-top:12px">角色权限：<b>管理员</b>=全部；<b>店长</b>=销售+客户+报价+价格库+案例+站点+导出；<b>销售顾问</b>=登记/修改销售+上传图片+客户（已默认勾选，可单独增删）；<b>设计师</b>=销售+客户+报价+方案+案例+上传图片。<br>账号「权限授权」可在编辑时单独勾选，留空则自动沿用角色默认权限。</div>`;
   $('#uNew').addEventListener('click', () => editUser(null));
   $('#uCredits').addEventListener('click', () => switchView('credits'));
   $$('[data-eu]').forEach(b => b.addEventListener('click', () => editUser(JSON.parse(b.dataset.eu))));
@@ -1147,11 +1177,24 @@ function editUser(u) {
       <div class="field"><label>角色</label><select id="euRole">${Object.entries(ROLE_NAMES).map(([k,v])=>`<option value="${k}" ${u.role===k?'selected':''}>${v}</option>`).join('')}</select></div>
       ${isNew?'':`<div class="field"><label>状态</label><select id="euActive"><option value="1" ${u.active?'selected':''}>启用</option><option value="0" ${!u.active?'selected':''}>停用</option></select></div>`}
       <div class="field full"><label>${isNew?'初始密码 *':'重置密码（留空则不改）'}</label><input id="euPw" type="text" placeholder="${isNew?'必填':'留空不修改'}"></div>
+      <div class="field full"><label>权限授权 <span class="hint" style="font-weight:400">（不勾选则自动沿用「${esc(ROLE_NAMES[u.role]||u.role)}」角色的默认权限）</span></label>
+        <div id="euPerms" class="perm-group">${userPermChecks(u)}</div>
+      </div>
     </div><div style="margin-top:14px"><button class="btn" id="euSave">保存</button></div></div></div>`;
   $('#dClose').addEventListener('click', closeDrawer);
+  // 切换角色时，按该角色默认权限重填勾选
+  $('#euRole').addEventListener('change', e => {
+    const def = state._roleDefaults[e.target.value] || [];
+    $('#euPerms').innerHTML = permChecksHtml(def);
+  });
   $('#euSave').addEventListener('click', async () => {
     const body = { name: $('#euName').value, role: $('#euRole').value };
     if ($('#euPw').value) body.password = $('#euPw').value;
+    // 收集勾选的权限；若与角色默认完全一致则不传（回落角色默认），否则显式存
+    const checked = Array.from(document.querySelectorAll('#euPerms input[type=checkbox]:checked')).map(c => c.value);
+    const def = state._roleDefaults[body.role] || [];
+    const sameAsDefault = checked.length === def.length && def.every(k => checked.includes(k));
+    if (!sameAsDefault) body.permissions = checked;
     if (isNew) {
       body.username = $('#euUser').value.trim();
       if (!body.username || !body.password) return toast('账号和初始密码必填');
@@ -1164,6 +1207,19 @@ function editUser(u) {
     }
     closeDrawer(); toast('已保存'); renderUsers();
   });
+}
+
+// 账号权限勾选框：依据「账号现有 permissions（无则用角色默认）」预填
+function userPermChecks(u) {
+  const init = (u.permissions && u.permissions.length) ? u.permissions : (state._roleDefaults[u.role] || []);
+  return permChecksHtml(init);
+}
+function permChecksHtml(init) {
+  const set = new Set(init || []);
+  const labels = state._permLabels || {};
+  return Object.keys(labels).map(k =>
+    `<label class="perm-chk"><input type="checkbox" value="${esc(k)}" ${set.has(k)?'checked':''}> ${esc(labels[k])}</label>`
+  ).join('');
 }
 
 // ---------------- 系统设置（管理员） ----------------
@@ -2345,6 +2401,8 @@ async function renderSales() {
 
   $('#sfSearch').addEventListener('click', loadSalesList);
   $('#sfAdd').addEventListener('click', () => openSalesForm());
+  // 无「登记销售记录」授权则隐藏登记入口
+  if (!can('sales_create')) { const b = $('#sfAdd'); if (b) b.style.display = 'none'; }
   $('#sfWeekly').addEventListener('click', loadWeeklySummary);
   $('#sfMonthly').addEventListener('click', loadMonthlySummary);
   $('#sfCustomer').addEventListener('keydown', e => { if (e.key === 'Enter') loadSalesList(); });
@@ -2410,8 +2468,8 @@ async function loadSalesList() {
       <td>${esc(s.customer_name || '-')}</td>
       <td class="sales-actions">
         <button class="btn sm ghost" onclick="printSaleReceipt(${s.id})">🖨️ 打印</button>
-        <button class="btn sm ghost" onclick="editSaleRecord(${s.id})">✏️ 编辑</button>
-        <button class="btn sm ghost" onclick="deleteSaleRecord(${s.id})">🗑️</button>
+        ${can('sales_edit') ? `<button class="btn sm ghost" onclick="editSaleRecord(${s.id})">✏️ 编辑</button>` : ''}
+        ${can('sales_delete') ? `<button class="btn sm ghost" onclick="deleteSaleRecord(${s.id})">🗑️</button>` : ''}
       </td>
     </tr>`;
   }
@@ -2522,6 +2580,7 @@ function openSalesForm(record) {
   async function uploadSalesPhoto(file) {
     if (!file) return;
     if (!file.type.startsWith('image/')) return;
+    if (!can('upload')) { toast('当前账号未开启「上传图片」授权'); return; }
     toast('上传中...');
     try {
       const b64 = await readFileAsDataURL(file);
